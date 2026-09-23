@@ -268,3 +268,5 @@ textarea.cell { resize: vertical; min-height: 34px; line-height: 1.35; }
 
 .phrase { font: 600 17px/1.5 var(--mono); padding: 10px 14px; border-radius: 10px; background: var(--surface-2);
           border: 1px dashed var(--line); letter-spacing: .02em; user-select: all; overflow-wrap: anywhere; }
+
+.phrase-hidden { font: 500 14px/1.5 var(--font); color: var(--muted); letter-spacing: 0; user-select: none; }

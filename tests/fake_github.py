@@ -194,8 +194,13 @@ def get_ref(o: str, r: str, ref: str):
     return {"ref": f"refs/{ref}", "object": {"sha": REFS[f"refs/{ref}"]}}
 
 
+PAGES_ALLOWED = {"ok": True}
+
+
 @app.post("/repos/{o}/{r}/pages")
 def pages(o: str, r: str):
+    if not PAGES_ALLOWED["ok"]:              # a token without the Pages permission
+        raise HTTPException(403, "Resource not accessible by personal access token")
     return Response(status_code=201)
 
 
@@ -203,3 +208,4 @@ def reset() -> None:
     for d in (BRANCHES["data"], BRANCHES["main"], SECRETS, REFS, BLOBS, TREES, COMMITS):
         d.clear()
     RUNS.clear()
+    PAGES_ALLOWED["ok"] = True

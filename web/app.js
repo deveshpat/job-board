@@ -468,6 +468,7 @@ async function renderGithub() {
     box.innerHTML = `
       <h3 class="section-title">GitHub</h3>
       <p style="margin:0 0 6px">Synced with <b>${esc(g.owner)}/${esc(g.repo)}</b> · web app: <a href="${esc(g.site)}" target="_blank" rel="noopener">${esc(g.site)}</a></p>
+      ${g.pages_manual ? `<p class="warnbox">One step left for the web app: on GitHub open <a href="https://github.com/${esc(g.owner)}/${esc(g.repo)}/settings/pages" target="_blank" rel="noopener">Settings → Pages</a> and set <b>Source: GitHub Actions</b>, then re-run the <i>Pages</i> workflow from the Actions tab. (Your token can't do this itself — it has no Pages permission.) Daily runs already work without it.</p>` : ""}
       <p class="faint" style="font-size:13px;margin:0 0 12px">Daily runs happen on GitHub Actions (Kev on Kaggle). This Mac syncs your data every 5 minutes and a few seconds after each change.
         Last sync: ${esc((g.last_sync || "never").replace("T", " "))} UTC${g.last_error ? ` · <span style="color:var(--bad)">${esc(g.last_error)}</span>` : ""}</p>
       <div style="display:flex;gap:10px"><button class="btn" id="g-sync">Sync now</button><button class="btn" id="g-off">Disconnect</button></div>`;
@@ -480,54 +481,85 @@ async function renderGithub() {
     <p class="faint" style="font-size:13px;margin-top:0">Puts the web app on GitHub Pages and moves daily runs to GitHub Actions (Kev on Kaggle), so they happen even when this Mac is off.
       Your data is encrypted with your passphrase before it leaves this Mac — the repo can be public.</p>
     <form id="g-form" class="stack" autocomplete="off" style="gap:10px">
-      <div class="field-row"><label>Repository</label><input class="input" name="repo" placeholder="your-username/job-board (create it empty first)" required></div>
-      <div class="field-row"><label>Token</label><input class="input" name="token" type="password" placeholder="fine-grained token, this repo only" required></div>
+      <div class="field-row"><label>Repository</label><input class="input" name="repo" value="${g.owner ? esc(g.owner + "/" + g.repo) : ""}" placeholder="your-username/job-board (create it empty first)" required></div>
+      <div class="field-row"><label>Token</label><input class="input" name="token" type="password" autocomplete="off"
+        placeholder="${g.token_hint ? `saved ${esc(g.token_hint)} — leave blank to reuse` : "fine-grained token, this repo only"}" ${g.token_hint ? "" : "required"}></div>
       <p class="faint" style="font-size:12.5px;margin:0">Create one at <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com → Settings → Fine-grained tokens</a>
         with <b>Only select repositories</b> → your repo, and <b>Read and write</b> on: Contents, Actions, Secrets, Workflows, Pages.</p>
-      <div class="field-row"><label>Passphrase</label>
-        <div><div class="phrase" id="g-phrase" aria-live="polite">—</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-          <button type="button" class="btn small" id="g-new">Generate another</button>
-          <button type="button" class="btn small" id="g-copy">Copy</button>
-          <button type="button" class="btn small" id="g-dl">Download as .txt</button></div></div></div>
-      <p class="faint" style="font-size:12.5px;margin:0">This passphrase is your password for the web app on every device. It's randomly generated
+      ${g.has_key ? `<p class="faint" style="font-size:13px;margin:0">✓ This Mac already holds the encryption key for <b>${esc(g.owner)}/${esc(g.repo)}</b> from your earlier attempt — no passphrase needed. Just press Publish.</p>` : ""}
+      <div class="field-row" ${g.has_key ? "hidden" : ""}><label>Passphrase</label>
+        <div>
+          <div class="phrase" id="g-phrase" aria-live="polite">—</div>
+          <div id="g-tools" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button type="button" class="btn small" id="g-new">Generate another</button>
+            <button type="button" class="btn small" id="g-copy">Copy</button>
+            <button type="button" class="btn small" id="g-dl">Download as .txt</button></div>
+          <button type="button" class="btn small" id="g-restart" hidden style="margin-top:8px">Start over with a new passphrase</button>
+        </div></div>
+      <p class="faint" id="g-help" style="font-size:12.5px;margin:0" ${g.has_key ? "hidden" : ""}>This passphrase is your password for the web app on every device. It's randomly generated
         (6 words ≈ 77 bits) because the encrypted data sits in a public repo. <b>Nobody can recover it for you</b> — save it in a password manager or write it down.</p>
-      <label class="checks"><label><input type="checkbox" id="g-saved"> I've saved this passphrase somewhere safe</label></label>
-      <details id="g-own-box" class="faint" style="font-size:13px"><summary>Use a passphrase I already have</summary>
+      <label class="checks" id="g-saved-row" ${g.has_key ? "hidden" : ""}><label><input type="checkbox" id="g-saved"> I've saved this passphrase somewhere safe</label></label>
+      <div class="field-row" id="g-confirm-row" hidden><label>Type it back</label>
+        <input class="input" name="again" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="from where you saved it — it's hidden now"></div>
+      <details id="g-own-box" class="faint" style="font-size:13px" ${g.has_key ? "hidden" : ""}><summary>Use a passphrase I already have</summary>
         <p style="margin:6px 0">For connecting this Mac to a repo you already published, or reusing a phrase you saved earlier.</p>
         <input class="input" name="own" type="password" autocomplete="off" placeholder="your saved passphrase"></details>
-      <div class="field-row" id="g-confirm-row" hidden><label>Type it back</label><input class="input" name="again" autocomplete="off" spellcheck="false" placeholder="to confirm you saved it"></div>
       <div><button class="btn primary" id="g-go" disabled>Publish</button> <span class="faint" id="g-msg" aria-live="polite"></span></div>
       ${g.publish_error ? `<p style="color:var(--bad);font-size:13px;margin:0">Last attempt failed: ${esc(g.publish_error)}</p>` : ""}
     </form>`;
   const f = $("#g-form");
-  let phrase = "";
+  let phrase = "", confirmed = false;
   const norm = (p) => p.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
   const own = () => norm(f.own.value);
-  const check = () => { $("#g-go").disabled = !(own() || ($("#g-saved").checked && norm(f.again.value) === norm(phrase))); };
-  const newPhrase = async (fresh) => {
-    phrase = (await api(`/api/github/passphrase${fresh ? "?new=1" : ""}`)).passphrase;
-    $("#g-phrase").textContent = phrase;
-    $("#g-saved").checked = false; $("#g-confirm-row").hidden = true; f.again.value = ""; check();
+  const check = () => { $("#g-go").disabled = !(g.has_key || own() || confirmed); };
+  const show = (mode) => {                       // "shown" → "hidden" (retype it) → "confirmed"
+    $("#g-phrase").textContent = mode === "shown" ? phrase
+      : mode === "hidden" ? "•••••• hidden — type it back from where you saved it"
+      : "✓ Confirmed and saved on this Mac until publishing finishes";
+    $("#g-phrase").classList.toggle("phrase-hidden", mode !== "shown");
+    $("#g-tools").hidden = mode !== "shown";
+    $("#g-restart").hidden = mode !== "confirmed";
+    $("#g-help").hidden = mode === "confirmed";
+    $("#g-saved-row").hidden = mode === "confirmed";
+    $("#g-confirm-row").hidden = mode !== "hidden";
+    if (mode === "hidden") { f.again.value = ""; f.again.focus(); }
+    check();
   };
-  $("#g-new").onclick = () => newPhrase(true);
+  const load = async (fresh) => {
+    const r = await api(`/api/github/passphrase${fresh ? "?new=1" : ""}`);
+    confirmed = !!r.confirmed;
+    phrase = r.passphrase || "";
+    $("#g-saved").checked = false;
+    show(confirmed ? "confirmed" : "shown");
+  };
+  $("#g-new").onclick = () => load(true);
+  $("#g-restart").onclick = () => load(true);
   $("#g-copy").onclick = async () => { try { await navigator.clipboard.writeText(phrase); toast("Copied — paste it into your password manager"); } catch (_) { toast("Couldn't copy — select the words and copy them"); } };
   $("#g-dl").onclick = () => {
     const txt = `Job Board passphrase (${new Date().toISOString().slice(0, 10)})\n\n${phrase}\n\nRepository: ${f.repo.value || "(your repo)"}\nUse it to unlock the web app. Keep this file private.\n`;
     Object.assign(document.createElement("a"), { download: "job-board-passphrase.txt",
       href: URL.createObjectURL(new Blob([txt], { type: "text/plain" })) }).click();
   };
-  $("#g-saved").onchange = () => { $("#g-confirm-row").hidden = !$("#g-saved").checked; if (!$("#g-confirm-row").hidden) f.again.focus(); check(); };
-  f.again.oninput = check;
+  $("#g-saved").onchange = () => show($("#g-saved").checked ? "hidden" : "shown");
+  f.again.oninput = async () => {
+    if (norm(f.again.value) !== norm(phrase)) return;
+    try {
+      await api("/api/github/passphrase/confirm", { json: { passphrase: f.again.value } });
+      confirmed = true;
+      phrase = "";                                 // no longer kept in the page
+      show("confirmed");
+      toast("Passphrase confirmed and saved on this Mac");
+    } catch (e) { toast(e.message); }
+  };
   f.own.oninput = check;
-  newPhrase();
+  if (!g.has_key) load(false); else check();
   f.onsubmit = async (e) => {
     e.preventDefault();
-    if (!own() && norm(f.again.value) !== norm(phrase)) return toast("That doesn't match the passphrase above");
+    if (!g.has_key && !own() && !confirmed) return toast("Confirm the passphrase first");
     $("#g-go").disabled = true;
     $("#g-msg").textContent = "Publishing… (uploads the app, creates the encrypted data branch, saves secrets)";
     try {
-      const r = await api("/api/github/publish", { json: { repo: f.repo.value, token: f.token.value, passphrase: own() || phrase } });
+      const r = await api("/api/github/publish", { json: { repo: f.repo.value, token: f.token.value, passphrase: g.has_key ? "" : own() } });   // blank → the Mac uses the confirmed one
       toast(`Published — web app at ${r.site} (Pages takes a minute or two)`);
     } catch (err) { toast(err.message); }
     renderGithub();

@@ -53,26 +53,42 @@ class Sync:
     def public(self) -> dict:
         c = self.cfg
         return {"enabled": self.enabled, "owner": c.get("owner"), "repo": c.get("repo"),
+                "token_hint": ("••••" + c["token"][-4:]) if c.get("token") else "",
+                "has_key": bool(c.get("data_key")),
+                "pages_manual": c.get("pages_manual", False),
                 "site": f"https://{c['owner']}.github.io/{c['repo']}/" if c.get("owner") else None,
                 "last_sync": c.get("last_sync"), "last_error": c.get("last_error")}
 
     # -- one-time setup -----------------------------------------------------------------------
-    def publish(self, owner: str, repo: str, token: str, passphrase: str, api: str = API) -> dict:
-        bits = vault.passphrase_bits(passphrase)
-        if bits < vault.MIN_PASSPHRASE_BITS:
-            raise ValueError(f"Passphrase too weak (~{bits:.0f} bits). The encrypted files are public, so use at least "
-                             f"5 random words, e.g. 'orbit tulip canyon ember velvet'.")
+    def publish(self, owner: str, repo: str, token: str = "", passphrase: str = "", api: str = API) -> dict:
+        """token/passphrase may be blank to reuse what an earlier attempt for this repo saved on this Mac."""
+        saved = self.cfg if (self.cfg.get("owner"), self.cfg.get("repo")) == (owner, repo) else {}
+        token = token or saved.get("token", "")
+        if not token:
+            raise ValueError("Enter your GitHub token.")
+        if passphrase:
+            bits = vault.passphrase_bits(passphrase)
+            if bits < vault.MIN_PASSPHRASE_BITS:
+                raise ValueError(f"Passphrase too weak (~{bits:.0f} bits). The encrypted files are public, so use "
+                                 f"at least 5 random words, e.g. 'orbit tulip canyon ember velvet'.")
         gh = GitHub(owner, repo, token, api)
         existing = gh.file("keys.json")
         if existing:
             keys = json.loads(existing[1])
-            key = vault.unlock(keys, passphrase)
+            key = vault.unlock(keys, passphrase) if passphrase else self._saved_key_for(gh, saved)
             if key is None:
-                raise ValueError("This repo is already set up with a different passphrase.")
+                raise ValueError("This repo is already set up with a different passphrase." if passphrase else
+                                 "Enter the passphrase this repo was set up with.")
             self.log("Joining the existing encrypted data on the repo")
         else:
+            if not passphrase:
+                raise ValueError("Choose a passphrase (use the generated one).")
             key = vault.new_data_key()
             keys = {"v": 1, "wraps": [vault.wrap_passphrase(key, passphrase)]}
+        # Remember repo, token and data key now, so a retry after any later failure needs none of them again.
+        # (Local database only — data/ is never published.)
+        self.db.put("github", {**saved, "owner": owner, "repo": repo, "token": token, "api": api,
+                               "data_key": vault.b64(key), "enabled": saved.get("enabled", False)})
         if gh.is_empty():
             self.log("Empty repository — creating its first commit")
             gh.seed_empty_repo()
@@ -92,18 +108,33 @@ class Sync:
         for a in self.db.get("kaggle_accounts", []):
             if a.get("key"):
                 gh.set_secret(secret_name(a["username"]), a["key"])
-        gh.enable_pages()
-        self.log("Deploying the web app and starting the first run…")
-        if not gh.dispatch_soon("pages.yml"):     # in case the push-triggered deploy ran before Pages was on
+        pages_ok = gh.enable_pages()
+        if not pages_ok:
+            self.log("  the token can't switch Pages on — do it once in Settings → Pages → Source: GitHub Actions")
+        self.log("Deploying the web app and starting a run…")
+        if pages_ok and not gh.dispatch_soon("pages.yml"):   # in case the push-triggered deploy ran before Pages was on
             self.log("  couldn't start the Pages deploy — re-run it from the repo's Actions tab")
-        if not existing and not gh.dispatch_soon("daily.yml"):
-            self.log("  couldn't start the first run — it will start at the next hourly check")
+        if not gh.dispatch_soon("daily.yml"):
+            self.log("  couldn't start the run — it will start at the next hourly check")
         self.db.put("github", {"owner": owner, "repo": repo, "token": token, "api": api,
-                               "data_key": vault.b64(key), "enabled": True})
+                               "data_key": vault.b64(key), "enabled": True, "pages_manual": not pages_ok})
         if existing:
             self.sync_once()
         self.db.put("github", {**self.cfg, "last_sync": now(), "last_error": None})
         return self.public()
+
+    def _saved_key_for(self, gh: GitHub, saved: dict) -> Optional[bytes]:
+        """The data key an earlier attempt stored here — only if it really opens this repo's data."""
+        if not saved.get("data_key"):
+            return None
+        key = vault.unb64(saved["data_key"])
+        f = gh.file("user.enc")
+        try:
+            if f:
+                vault.decrypt(key, "user", f[1])
+            return key
+        except Exception:
+            return None
 
     def disconnect(self) -> None:
         self.db.put("github", {**self.cfg, "enabled": False})

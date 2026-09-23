@@ -98,8 +98,11 @@ class GitHub:
         self._req("PUT", f"/actions/secrets/{name}", json={"encrypted_value": base64.b64encode(sealed).decode(),
                                                            "key_id": pk["key_id"]})
 
-    def enable_pages(self) -> None:
-        self._req("POST", "/pages", ok=(201, 409, 422), json={"build_type": "workflow"})
+    def enable_pages(self) -> bool:
+        """True if Pages is on (or was already). False if the token may not do it (no Pages permission):
+        the user then flips it once in Settings → Pages → Source: GitHub Actions."""
+        r = self._req("POST", "/pages", ok=(201, 403, 409, 422), json={"build_type": "workflow"})
+        return r.status_code != 403
 
     def dispatch(self, workflow: str = "daily.yml", inputs: Optional[dict] = None) -> None:
         body = {"ref": "main"}

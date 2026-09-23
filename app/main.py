@@ -90,12 +90,13 @@ def github_status():
 async def github_publish(request: Request):
     b = await request.json()
     owner, _, repo = (b.get("repo") or "").strip().strip("/").partition("/")
-    if not owner or not repo or not b.get("token") or not b.get("passphrase"):
-        raise HTTPException(400, "Need repository (owner/name), token and passphrase")
-    global _pending_phrase
+    if not owner or not repo:
+        raise HTTPException(400, "Enter the repository as owner/name")
+    passphrase = b.get("passphrase") or (_draft().get("phrase") if _draft().get("confirmed") else "")
     try:
-        result = sync.publish(owner, repo, b["token"].strip(), b["passphrase"], api=b.get("api") or "https://api.github.com")
-        _pending_phrase = None
+        result = sync.publish(owner, repo, (b.get("token") or "").strip(), passphrase or "",
+                              api=b.get("api") or "https://api.github.com")
+        db.put("passphrase_draft", None)          # the Mac keeps only the data key from here on
         db.put("github_publish_error", None)
         return result
     except ValueError as e:
@@ -108,18 +109,33 @@ async def github_publish(request: Request):
         raise HTTPException(502, f"GitHub: {e}")
 
 
-_pending_phrase = None
+# The passphrase offered for Publish lives in the local database until publishing succeeds: generated (shown),
+# then confirmed by retyping it from wherever you saved it (never sent back to the page after that).
+def _draft() -> dict:
+    return db.get("passphrase_draft") or {}
 
 
 @app.get("/api/github/passphrase")
 def github_new_passphrase(new: bool = False):
-    """The random passphrase offered for Publish (6 EFF diceware words ≈ 77 bits). It stays the same until you
-    ask for another or publish, so leaving the page doesn't swap it; it lives only in this process's memory."""
-    global _pending_phrase
     from .vault import generate_passphrase, passphrase_bits
-    if new or not _pending_phrase:
-        _pending_phrase = generate_passphrase(6)
-    return {"passphrase": _pending_phrase, "bits": round(passphrase_bits(_pending_phrase))}
+    d = _draft()
+    if d.get("confirmed") and not new:
+        return {"confirmed": True}
+    if new or not d.get("phrase"):
+        d = {"phrase": generate_passphrase(6), "confirmed": False}
+        db.put("passphrase_draft", d)
+    return {"passphrase": d["phrase"], "bits": round(passphrase_bits(d["phrase"])), "confirmed": False}
+
+
+@app.post("/api/github/passphrase/confirm")
+async def github_confirm_passphrase(request: Request):
+    from .vault import normalize_passphrase
+    typed = (await request.json()).get("passphrase") or ""
+    d = _draft()
+    if not d.get("phrase") or normalize_passphrase(typed) != normalize_passphrase(d["phrase"]):
+        raise HTTPException(400, "That doesn't match the generated passphrase")
+    db.put("passphrase_draft", {**d, "confirmed": True})
+    return {"confirmed": True}
 
 
 @app.post("/api/github/sync")

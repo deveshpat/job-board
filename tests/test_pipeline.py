@@ -410,13 +410,15 @@ def test_publish_and_two_device_sync(tmp_path, fake_github):
     assert b"k" * 32 not in fg.BRANCHES["data"]["user.enc"][1]                # keys never in the repo
     assert vault.unlock(json.loads(fg.BRANCHES["data"]["keys.json"][1]), phrase) == key
 
-    # A second Mac joins with the same passphrase and gets the tracker.
+    # A second Mac joins with the same passphrase and gets the tracker — with a token lacking Pages permission.
+    fg.PAGES_ALLOWED["ok"] = False
     mac2 = DB(tmp_path / "mac2.sqlite")
     s2 = Sync(mac2)
     with pytest.raises(ValueError):
         s2.publish("me", "job-board", "tok", "different words for this passphrase entirely", api=api)
     s2.publish("me", "job-board", "tok", phrase, api=api)
     assert [a["company"] for a in mac2.applications()] == ["Acme"]
+    assert s2.public()["enabled"] and s2.public()["pages_manual"]             # publish completes, flags the click
 
     # Edits flow both ways; an unchanged sync makes no commit.
     a2 = mac2.applications()[0]
@@ -445,3 +447,24 @@ def test_generated_passphrase():
     keys = {"wraps": [vault.wrap_passphrase(k, p, iterations=1000)]}
     assert vault.unlock(keys, "  " + p.upper().replace(" ", "   ") + " ") == k     # case/spacing don't matter
     assert vault.unlock(keys, p.rsplit(" ", 1)[0]) is None                           # a missing word does
+
+
+def test_publish_retry_reuses_saved_credentials(tmp_path, fake_github):
+    """A publish that fails late (e.g. a network error) can be retried with no token or passphrase typed."""
+    from app.sync import Sync
+    from app import github as ghmod
+    fg, api = fake_github
+    db = DB(tmp_path / "mac.sqlite")
+    db.put("profile", {"name": "Test"}); db.touch("profile")
+    s = Sync(db)
+    real = ghmod.GitHub.set_secret
+    ghmod.GitHub.set_secret = lambda self, n, v: (_ for _ in ()).throw(ghmod.GitHubError("network down"))
+    try:
+        with pytest.raises(ghmod.GitHubError):
+            s.publish("me", "job-board", "tok-123456", "orbit tulip canyon ember velvet", api=api)
+    finally:
+        ghmod.GitHub.set_secret = real
+    pub = s.public()
+    assert not pub["enabled"] and pub["token_hint"] == "••••3456" and pub["has_key"]    # remembered despite failure
+    s.publish("me", "job-board", "", "", api=api)                                        # retry: nothing typed
+    assert s.public()["enabled"] and "JOBBOARD_DATA_KEY" in fg.SECRETS
