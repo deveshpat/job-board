@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Job Board</title>
+  <meta name="theme-color" content="#0f1115">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b8cff'/><path d='M9 13h14v10H9z' fill='none' stroke='white' stroke-width='2.4'/><path d='M13 13v-3h6v3' fill='none' stroke='white' stroke-width='2.4'/></svg>">
+  <link rel="stylesheet" href="static/styles.css?v=11">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>Job Board</div>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#/profile" data-tab="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>Profile</span></a>
+      <a href="#/applications" data-tab="applications"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span>Applications</span><b class="badge" id="badge-new" hidden></b></a>
+      <a href="#/tracker" data-tab="tracker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/><circle cx="8" cy="5" r="1.6"/><circle cx="14" cy="12" r="1.6"/><circle cx="10" cy="19" r="1.6"/></svg><span>Tracker</span><b class="badge" id="badge-apps" hidden></b></a>
+    </nav>
+    <div class="jev-pill" id="jev-pill" title="Jev status"></div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="static/vault.js?v=11"></script>
+  <script src="static/static.js?v=11"></script>
+  <script src="static/app.js?v=11"></script>
+</body>
+</html>

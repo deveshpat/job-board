@@ -1,0 +1,54 @@
+# The scheduled job-board run. Fires hourly; scripts/ci_run.py exits quietly unless your chosen daily
+# time (set in the app, in your timezone) has passed and today's run hasn't happened yet.
+name: Scheduled run
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run now even if today's run already happened
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: jobboard-run
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350          # GitHub stops jobs at 6 h; Kaggle work is budgeted to fit (4.5 h)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: data, path: state, fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -q -r requirements.txt kaggle
+      - id: run
+        name: Run pipeline on Kaggle
+        env:
+          JOBBOARD_DATA_KEY: ${{ secrets.JOBBOARD_DATA_KEY }}
+          ALL_SECRETS: ${{ toJSON(secrets) }}          # KAGGLE_KEY_<USERNAME>, one per account
+          KAGGLE_CLI: kaggle
+          JOBBOARD_KAGGLE_BUDGET_H: "4.5"
+        run: |
+          set +e
+          python scripts/ci_run.py --state state ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: Save encrypted state
+        if: steps.run.outputs.code == '0' || steps.run.outputs.code == '2'
+        working-directory: state
+        run: |
+          git config user.name "jobboard-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pipeline.enc board.enc
+          git diff --cached --quiet && exit 0
+          git commit -q -m "scheduled run $(date -u +%FT%TZ)"
+          for i in 1 2 3; do git push -q && break; git pull -q --rebase; done
+      - name: Report
+        if: steps.run.outputs.code == '1' || steps.run.outputs.code == '2'
+        run: |
+          echo "::error::Run did not complete (code ${{ steps.run.outputs.code }}): 1 = not set up yet, 2 = Kaggle unavailable today"
+          exit 1

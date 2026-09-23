@@ -1,0 +1,1543 @@
+{
+ "jobs": {
+  "c9f71b621a6ebb74": {
+   "tech": true,
+   "field": "backend",
+   "location": "local_office",
+   "experience": "4_7",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 3,
+   "eligible": true
+  },
+  "1c0e4a5d35b823d5": {
+   "tech": true,
+   "field": "data_engineering",
+   "level": "senior",
+   "location": "local_office",
+   "experience": "4_7",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "0b9e039c7e4b76d9": {
+   "tech": false,
+   "field": "data_science",
+   "level": "staff_plus",
+   "location": "local_office",
+   "experience": "7_plus",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "42ba40e405102f9e": {
+   "tech": true,
+   "field": "backend",
+   "level": "staff_plus",
+   "location": "local_office",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "dc168a198ea89baa": {
+   "tech": false,
+   "level": "staff_plus",
+   "location": "remote_open",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "5a1e1634146c6bc6": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "staff_plus",
+   "location": "local_office",
+   "experience": "4_7",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "cb48ec24667cc61b": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "entry",
+   "location": "local_office",
+   "experience": "0_2",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "b003219f965967c1": {
+   "tech": true,
+   "level": "staff_plus",
+   "location": "local_office",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "8c311810f53c1a65": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "local_office",
+   "experience": "2_4",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "db625564b24c9750": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "remote_open",
+   "experience": "7_plus",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "78b3926412cca2ed": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "local_office",
+   "experience": "not_stated",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "96bf816cd60df34a": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "senior",
+   "location": "local_office",
+   "experience": "4_7",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "a77484fcc6f6b0cf": {
+   "tech": true,
+   "field": "devops_platform",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "8ca5d66564230e3c": {
+   "tech": false,
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "13be13eec3c85a9e": {
+   "tech": false,
+   "red_flags": true,
+   "relevant": false
+  },
+  "7a8dfa4af0fc1d37": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "experience": "2_4",
+   "employment": "contract",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "f46cbbfae496dc70": {
+   "tech": true,
+   "field": "devops_platform",
+   "level": "senior",
+   "location": "restricted",
+   "experience": "7_plus",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "979a2d2f025a70e7": {
+   "tech": true,
+   "field": "other_engineering",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "e06e60f611b07956": {
+   "tech": true,
+   "field": "other_engineering",
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "72f7d4aca7d7fed9": {
+   "tech": true,
+   "field": "devops_platform",
+   "location": "restricted",
+   "experience": "0_2",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "1ff5d7fb0d3c04f8": {
+   "tech": false,
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "2a89f0e53daa134d": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "f831cc4770fe0d1a": {
+   "tech": true,
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "11a646f9ee49eaf6": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "experience": "2_4",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "a32e8d4041ff5b1c": {
+   "tech": true,
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "degree": "cs_engineering_degree",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "8e2d173d924649d0": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "staff_plus",
+   "location": "restricted",
+   "experience": "7_plus",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "511d31241c8feff0": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "senior",
+   "location": "restricted",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "4fcff380ad52ccde": {
+   "tech": true,
+   "field": "backend",
+   "level": "staff_plus",
+   "location": "restricted",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "a741ac9510cffe14": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "staff_plus",
+   "location": "restricted",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "659c03768ac7ebf6": {
+   "tech": true,
+   "level": "staff_plus",
+   "location": "restricted",
+   "work_mode": "hybrid",
+   "degree": "any_degree_or_equivalent",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "a0e07b0b185e7433": {
+   "tech": true,
+   "level": "staff_plus",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "49f931fb3d53bc95": {
+   "tech": true,
+   "field": "full_stack",
+   "level": "senior",
+   "location": "restricted",
+   "experience": "2_4",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "36593c8f11f705ef": {
+   "tech": true,
+   "field": "devops_platform",
+   "level": "senior",
+   "location": "restricted",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "1031273c758ebfed": {
+   "tech": true,
+   "field": "ai_ml_engineering",
+   "location": "restricted",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "37e340ab7e3e6e48": {
+   "tech": true,
+   "level": "senior",
+   "location": "restricted",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "98d6798652b8666b": {
+   "tech": true,
+   "field": "ai_ml_engineering",
+   "location": "restricted",
+   "experience": "4_7",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "f9d38e687cddd0ef": {
+   "tech": true,
+   "level": "mid",
+   "location": "restricted",
+   "experience": "2_4",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 3,
+   "eligible": false
+  },
+  "910cfe7feb5413e8": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "hybrid",
+   "degree": "any_degree_or_equivalent",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "1446912017cc956a": {
+   "tech": true,
+   "level": "senior",
+   "location": "restricted",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "42f095b2d738a904": {
+   "tech": false,
+   "field": "research",
+   "level": "staff_plus",
+   "location": "restricted",
+   "experience": "4_7",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "e4559d0a0058c20c": {
+   "tech": true,
+   "field": "applied_ai_products",
+   "location": "restricted",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 3,
+   "eligible": false
+  },
+  "ebbe37532a936a13": {
+   "tech": true,
+   "field": "devops_platform",
+   "location": "restricted",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "1bfa104fbe240ca6": {
+   "tech": false,
+   "level": "staff_plus",
+   "location": "local_office",
+   "experience": "7_plus",
+   "degree": "cs_engineering_degree",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "8d027d04fdd80812": {
+   "tech": true,
+   "field": "applied_ai_products",
+   "work_mode": "remote",
+   "red_flags": false,
+   "skill": 3
+  },
+  "03d4d23305adf1eb": {
+   "tech": true,
+   "field": "devops_platform",
+   "location": "local_office",
+   "experience": "4_7",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "971eeb4fb2e6cd0f": {
+   "tech": false,
+   "field": "non_engineering",
+   "level": "senior",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "6f3275cb73d96c56": {
+   "tech": true,
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "e1453cd08574b86a": {
+   "tech": true,
+   "level": "staff_plus",
+   "location": "restricted",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "8cca359131f0bd5b": {
+   "tech": true,
+   "field": "backend",
+   "location": "restricted",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "d984255d891de36a": {
+   "tech": true,
+   "location": "restricted",
+   "experience": "4_7",
+   "degree": "cs_engineering_degree",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 3,
+   "eligible": false
+  },
+  "9b949ee61c18fa33": {
+   "tech": true,
+   "field": "other_engineering",
+   "location": "restricted",
+   "experience": "4_7",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "50305f694e8aea7f": {
+   "tech": true,
+   "field": "backend",
+   "level": "senior",
+   "location": "restricted",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": false
+  },
+  "a4325451f51ad46c": {
+   "tech": true,
+   "field": "other_engineering",
+   "level": "staff_plus",
+   "location": "restricted",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "92ac909bc8a82e8c": {
+   "tech": true,
+   "field": "devops_platform",
+   "level": "staff_plus",
+   "location": "restricted",
+   "experience": "7_plus",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "041f993b78d41b12": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "df2f71ab07c26152": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "344e450c4dd757fe": {
+   "tech": false,
+   "field": "non_engineering",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0
+  },
+  "614619844bd61bb7": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "3584ceec4be0793a": {
+   "tech": false,
+   "location": "restricted",
+   "experience": "2_4",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": false
+  },
+  "5e9317aa75250856": {
+   "tech": false,
+   "field": "non_engineering",
+   "location": "restricted",
+   "experience": "2_4",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": false
+  },
+  "530f0d0ae858f001": {
+   "tech": true,
+   "level": "internship",
+   "location": "remote_open",
+   "experience": "not_stated",
+   "employment": "internship",
+   "red_flags": false,
+   "relevant": true,
+   "skill": 2,
+   "eligible": true
+  },
+  "9127261fe4cdc61a": {
+   "tech": true,
+   "field": "backend",
+   "level": "senior",
+   "location": "local_office",
+   "experience": "7_plus",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 2,
+   "eligible": true
+  },
+  "940cfdbb926a5c61": {
+   "tech": true,
+   "level": "internship",
+   "employment": "internship",
+   "red_flags": false,
+   "relevant": true,
+   "skill": 3,
+   "eligible": true
+  },
+  "a0de74d84392c489": {
+   "tech": true,
+   "experience": "2_4",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "5e873f1f875d70af": {
+   "tech": true,
+   "field": "frontend",
+   "level": "entry",
+   "experience": "2_4",
+   "red_flags": false,
+   "relevant": true,
+   "skill": 3,
+   "eligible": true
+  },
+  "be6f25198ed2fd81": {
+   "tech": true,
+   "level": "internship",
+   "location": "local_office",
+   "experience": "not_stated",
+   "employment": "internship",
+   "red_flags": false,
+   "skill": 2,
+   "eligible": true
+  },
+  "1686e992f319bc25": {
+   "tech": true,
+   "field": "other_engineering",
+   "level": "mid",
+   "location": "local_office",
+   "experience": "2_4",
+   "work_mode": "hybrid",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "fcae4b91bcc326cb": {
+   "tech": true,
+   "field": "devops_platform",
+   "location": "local_office",
+   "experience": "2_4",
+   "work_mode": "onsite",
+   "degree": "cs_engineering_degree",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "dd263676c730c5be": {
+   "tech": true,
+   "field": "backend",
+   "location": "remote_open",
+   "experience": "not_stated",
+   "work_mode": "remote",
+   "employment": "full_time",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "8a3d7b88b622c118": {
+   "tech": true,
+   "field": "devops_platform",
+   "level": "senior",
+   "location": "remote_open",
+   "experience": "7_plus",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "19d07aaa17faf766": {
+   "tech": true,
+   "field": "ai_ml_engineering",
+   "level": "mid",
+   "location": "local_office",
+   "experience": "2_4",
+   "work_mode": "onsite",
+   "red_flags": false,
+   "relevant": true,
+   "skill": 3,
+   "eligible": true
+  },
+  "aad2d4904332a8ee": {
+   "tech": true,
+   "field": "other_engineering",
+   "location": "remote_open",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 0,
+   "eligible": true
+  },
+  "b0b560659791bb0f": {
+   "tech": true,
+   "level": "mid",
+   "location": "restricted",
+   "experience": "2_4",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 3,
+   "eligible": false
+  },
+  "b4dc0dac2b21789e": {
+   "tech": true,
+   "field": "backend",
+   "location": "remote_open",
+   "experience": "not_stated",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  },
+  "d21129934b4a84a4": {
+   "tech": true,
+   "field": "full_stack",
+   "location": "restricted",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 3,
+   "eligible": false
+  },
+  "cb1d323cd60f9b54": {
+   "tech": true,
+   "level": "senior",
+   "location": "remote_open",
+   "experience": "7_plus",
+   "work_mode": "remote",
+   "red_flags": false,
+   "relevant": false,
+   "skill": 1,
+   "eligible": true
+  }
+ },
+ "titles": {
+  "8a3da65508fa94bc": {
+   "field": false,
+   "above": false
+  },
+  "5cd5ffbb387e3db9": {
+   "field": false,
+   "above": false
+  },
+  "d0faf7c6399d67a1": {
+   "field": false,
+   "above": false
+  },
+  "cc5e67b744a57a2a": {
+   "field": false,
+   "above": true
+  },
+  "9fe9f3ee04810a99": {
+   "field": false,
+   "above": false
+  },
+  "8179eaf23e020a45": {
+   "field": false,
+   "above": true
+  },
+  "ac0a2ad507b16883": {
+   "field": false,
+   "above": true
+  },
+  "c8a5fad1c2514c97": {
+   "field": false,
+   "above": false
+  },
+  "38521399516f7ddd": {
+   "field": false,
+   "above": true
+  },
+  "79795f4b00ba2a49": {
+   "field": true,
+   "above": false
+  },
+  "e2b3f83603d0af9a": {
+   "field": false,
+   "above": false
+  },
+  "80b5dfd67e363f9e": {
+   "field": true,
+   "above": false
+  },
+  "6fa405779bcda911": {
+   "field": false,
+   "above": false
+  },
+  "900a084e64c927a7": {
+   "field": false,
+   "above": false
+  },
+  "18fcc0149e141c98": {
+   "field": false,
+   "above": true
+  },
+  "6901450e8beea88b": {
+   "field": false,
+   "above": false
+  },
+  "d99bd3a2db12c37b": {
+   "field": false
+  },
+  "af1c550a872c5461": {
+   "field": false,
+   "above": false
+  },
+  "5a32404e49eddf04": {
+   "field": false,
+   "above": true
+  },
+  "08594712033323f2": {
+   "field": false,
+   "above": true
+  },
+  "6a6bf2b7bffebe5d": {},
+  "33f879365ed9bd84": {
+   "field": false,
+   "above": false
+  },
+  "e60dd9a7698eed61": {
+   "field": false,
+   "above": true
+  },
+  "dc3804b3c8093560": {
+   "above": false
+  },
+  "235bd5762f59eee9": {
+   "field": false,
+   "above": true
+  },
+  "7a75162535756dda": {
+   "field": false,
+   "above": false
+  },
+  "36ff95b1a7ebe181": {
+   "field": true,
+   "above": true
+  },
+  "b91ff5ff8bd01306": {
+   "field": false,
+   "above": true
+  },
+  "56119223e1d3e26c": {
+   "field": false,
+   "above": false
+  },
+  "2e0a0e84a0f5f283": {
+   "above": false
+  },
+  "b941bbba71a687ce": {
+   "field": false,
+   "above": true
+  },
+  "9e49c8c56eac361f": {
+   "field": false
+  },
+  "8115b3505c777bd6": {
+   "field": false
+  },
+  "9dd96590f86fa65d": {
+   "above": false
+  },
+  "ae9ea8d9aec4234d": {
+   "field": true,
+   "above": false
+  },
+  "47158b05ffccd408": {
+   "field": false,
+   "above": false
+  },
+  "4ddb2bd3500d716b": {
+   "field": false,
+   "above": false
+  },
+  "fd19f17bef4517a7": {
+   "field": false,
+   "above": true
+  },
+  "9d7e1c88e1aaf1f8": {
+   "field": true,
+   "above": true
+  },
+  "5b4a9c92b5863d8a": {
+   "field": true,
+   "above": true
+  },
+  "7358358cb7bcaf19": {
+   "field": false,
+   "above": true
+  },
+  "d2e28f4e929c9a56": {
+   "field": false,
+   "above": false
+  },
+  "62327a78852dd0df": {
+   "field": false,
+   "above": false
+  },
+  "d3b5f3b468682b73": {
+   "field": false,
+   "above": true
+  },
+  "5fb53ce35ac697a8": {
+   "field": false,
+   "above": true
+  },
+  "e7bfecb407a78e91": {
+   "field": false
+  },
+  "5a9824a2e806f63f": {
+   "above": true
+  },
+  "c527f393a12b27a2": {
+   "field": false,
+   "above": false
+  },
+  "92b11274c1a39aa9": {
+   "field": true,
+   "above": false
+  },
+  "7d679724eeb31f77": {
+   "field": false,
+   "above": false
+  },
+  "5617c648444c6976": {
+   "field": false,
+   "above": false
+  },
+  "3a7b7e88ed3eca3f": {
+   "field": true,
+   "above": false
+  },
+  "563c212bfe9865d7": {
+   "field": false
+  },
+  "b48c33ed9e13c30f": {
+   "field": false,
+   "above": false
+  },
+  "8aa13acc782ee9ec": {
+   "field": true,
+   "above": true
+  },
+  "9c46d1e7bb184b11": {
+   "above": true
+  },
+  "9e89c4f19e2bf7f0": {
+   "above": true
+  },
+  "acb475b2b0ab4610": {
+   "field": false,
+   "above": true
+  },
+  "d082368cb4a089d1": {
+   "above": true
+  },
+  "796506666d72183b": {
+   "field": false,
+   "above": false
+  },
+  "1367980786e56113": {
+   "above": true
+  },
+  "9e3b861f4411466b": {
+   "field": false
+  },
+  "514f2a55cce4069c": {
+   "above": false
+  },
+  "2f1fe5c14354d79e": {
+   "above": true
+  },
+  "d6370cd4334cf852": {
+   "field": false,
+   "above": false
+  },
+  "569fad7aec3d1eed": {
+   "field": false,
+   "above": true
+  },
+  "13770417a65d4357": {
+   "field": false,
+   "above": true
+  },
+  "25147416154ec747": {
+   "above": false
+  },
+  "81abd0dea13d5cbf": {
+   "field": true,
+   "above": true
+  },
+  "160c1aa0f91e3d1b": {
+   "field": true,
+   "above": true
+  },
+  "a0d2f17fc2eaa66a": {
+   "above": false
+  },
+  "08863f84add12e3d": {
+   "field": false
+  },
+  "af799740ff64c967": {
+   "field": true,
+   "above": true
+  },
+  "cfd75c5dbef1e5c4": {
+   "above": true
+  },
+  "51075bac82822439": {
+   "field": false
+  },
+  "102c3220da6ff9ae": {
+   "field": true,
+   "above": false
+  },
+  "7ef13937491d83a6": {
+   "field": false,
+   "above": false
+  },
+  "ab4eaff5fc7199bd": {
+   "field": false,
+   "above": true
+  },
+  "c050b4067bb40b9a": {
+   "field": true,
+   "above": false
+  },
+  "0d0ea5564a5ece72": {
+   "field": false,
+   "above": false
+  },
+  "97d1809d34fefda0": {
+   "field": false,
+   "above": true
+  },
+  "5304897dc97f3876": {
+   "field": true,
+   "above": false
+  },
+  "2d54f2afc4c673a7": {
+   "field": false,
+   "above": true
+  },
+  "1f5627cbd6b50d15": {
+   "field": false,
+   "above": false
+  },
+  "93f4153f8b17ec6c": {
+   "above": true
+  },
+  "32b4e24913657acf": {
+   "field": false,
+   "above": false
+  },
+  "216f15e34b39c98b": {
+   "field": false,
+   "above": false
+  },
+  "559fcff13e797b15": {
+   "field": true,
+   "above": true
+  },
+  "530bed5303af7172": {
+   "field": false,
+   "above": false
+  },
+  "ba0a98ecf488be16": {
+   "field": false
+  },
+  "967876e35d8cd8df": {
+   "field": false,
+   "above": true
+  },
+  "0142a795a9dbe115": {
+   "field": false,
+   "above": false
+  },
+  "25bfcce03686c53e": {
+   "field": false,
+   "above": false
+  },
+  "880f4d99f99743ce": {
+   "field": false
+  },
+  "a25e219b93f2d293": {
+   "field": true,
+   "above": false
+  },
+  "d39e0281fe440165": {
+   "above": true
+  },
+  "ee6080728b509af3": {
+   "field": true,
+   "above": false
+  },
+  "5b230916ed063e01": {
+   "above": true
+  },
+  "f5627caf39b05c59": {
+   "field": false,
+   "above": false
+  },
+  "72a0c89ea5d903a5": {
+   "field": false,
+   "above": true
+  },
+  "eb53dc63b0c55fc5": {
+   "field": true,
+   "above": false
+  },
+  "309fd1230293bab0": {
+   "above": true
+  },
+  "1ce4a90aa6fc9343": {
+   "field": false
+  },
+  "043ea9b811cc28c7": {},
+  "8550477959e514e3": {
+   "field": false,
+   "above": false
+  },
+  "62d6099470426537": {
+   "field": false
+  },
+  "0acfac4e6221b69d": {
+   "field": false,
+   "above": true
+  },
+  "9af94a621df686d8": {
+   "field": false,
+   "above": false
+  },
+  "7968ae60bcefe265": {
+   "field": false,
+   "above": false
+  },
+  "c09a3a8b850d3c79": {
+   "field": false,
+   "above": false
+  },
+  "6a0cb21576d3e24d": {
+   "field": false,
+   "above": false
+  },
+  "677aafc8f82ca3f5": {
+   "field": true,
+   "above": true
+  },
+  "d82c82a33cd41b53": {
+   "field": false,
+   "above": true
+  },
+  "f50bf0980816dd04": {
+   "field": false,
+   "above": false
+  },
+  "029ba5f8b5f7917b": {
+   "field": false
+  },
+  "72539341e7d4c6ce": {
+   "field": false,
+   "above": true
+  },
+  "3a1e38f2e3179ff6": {
+   "field": false,
+   "above": false
+  },
+  "76aefef1a5151ca4": {
+   "field": false,
+   "above": true
+  },
+  "eb0c7caeeec7c990": {
+   "field": false,
+   "above": true
+  },
+  "c9775ea99e0fba85": {
+   "field": false,
+   "above": false
+  },
+  "d2149e9004279894": {
+   "field": true,
+   "above": false
+  },
+  "bafb368fe15967c1": {
+   "field": false,
+   "above": false
+  },
+  "1361bdf597cdd2fb": {
+   "field": false
+  },
+  "43a86a5b1d2acb48": {
+   "field": false
+  },
+  "29dd68007c711cde": {
+   "field": false,
+   "above": true
+  },
+  "0f474c96fccc738e": {
+   "field": false,
+   "above": false
+  },
+  "53fa4eb25073cd72": {
+   "field": false,
+   "above": true
+  },
+  "01792a37a3e5f875": {
+   "field": false,
+   "above": false
+  },
+  "6494b0b53c2bf22f": {
+   "field": false,
+   "above": true
+  },
+  "01c987615fd5956f": {
+   "field": true,
+   "above": false
+  },
+  "1882a7e84aaf0622": {
+   "field": true,
+   "above": true
+  },
+  "8200594cbe51a73d": {
+   "field": false,
+   "above": true
+  },
+  "db19312b18ca3b09": {
+   "field": true,
+   "above": false
+  },
+  "f36012118d1cc3de": {
+   "field": false
+  },
+  "6ebd9ab9ac80a524": {},
+  "e760ede0780ecbe1": {
+   "field": false,
+   "above": true
+  },
+  "4e442228bff652fc": {
+   "field": false,
+   "above": false
+  },
+  "9147febde24227b0": {
+   "field": false,
+   "above": true
+  },
+  "5daf35b2fc3fbfe3": {
+   "above": false
+  },
+  "ed4bed1c50ea1ed1": {
+   "field": false,
+   "above": true
+  },
+  "6e16cfbb28d89d3e": {
+   "field": false,
+   "above": true
+  },
+  "173e55fab2736e88": {
+   "field": false,
+   "above": false
+  },
+  "506dab940c5ec1b2": {
+   "above": true
+  },
+  "fb12a91ca98d52ff": {
+   "field": false,
+   "above": false
+  },
+  "d70ae33c3b1eced2": {
+   "field": false,
+   "above": true
+  },
+  "bc4f5f97b24750e4": {
+   "field": false,
+   "above": false
+  },
+  "a3878bb2503fad1a": {
+   "field": false
+  },
+  "3449ffd0408a56ae": {},
+  "26a90a8e6efdb5f7": {
+   "field": true,
+   "above": true
+  },
+  "de2dc3f01f0e9102": {
+   "field": false
+  },
+  "2625399768c1a173": {
+   "field": true,
+   "above": true
+  },
+  "6274e2969497aac6": {
+   "field": true,
+   "above": true
+  },
+  "21746c87c8146718": {
+   "field": true,
+   "above": false
+  },
+  "330b9a3614eed381": {
+   "field": false
+  },
+  "348944f5d2a24c83": {
+   "field": false,
+   "above": true
+  },
+  "cec088cb76ce2987": {
+   "field": false,
+   "above": false
+  },
+  "da2033fdec9c8022": {
+   "field": false,
+   "above": false
+  },
+  "258169d4cabe90eb": {
+   "field": false,
+   "above": false
+  },
+  "d4c514d2106da74e": {
+   "field": true,
+   "above": false
+  },
+  "200086d519858bc7": {
+   "field": false,
+   "above": false
+  },
+  "ad59977a9433d6e2": {
+   "field": true,
+   "above": true
+  },
+  "de57f037538364ed": {
+   "field": false,
+   "above": true
+  },
+  "6ce6ab7f174b8c4a": {
+   "field": false
+  },
+  "28c88019b2bde9eb": {
+   "above": true
+  },
+  "c859e7e10d8d5565": {
+   "field": true,
+   "above": false
+  },
+  "41d72442767e3391": {
+   "field": false,
+   "above": true
+  },
+  "171b1b66829b2b4a": {
+   "field": false
+  },
+  "1ffed40bba94269d": {
+   "field": false
+  },
+  "7f9985debd292264": {
+   "field": false
+  },
+  "1435f25331260bcc": {
+   "field": false,
+   "above": true
+  },
+  "42eeb6ff449ed8da": {
+   "field": false,
+   "above": false
+  },
+  "c9ac8f61a7f9d982": {
+   "field": false,
+   "above": false
+  },
+  "a581c88f97b89219": {
+   "field": false,
+   "above": false
+  },
+  "5a3a00d88011201d": {
+   "field": true,
+   "above": false
+  },
+  "c7b2f1523c150174": {
+   "above": false
+  },
+  "e90476d5c028cfa9": {
+   "above": true
+  },
+  "010070a3870b80b4": {
+   "field": true,
+   "above": true
+  },
+  "de8fc5143f4fa127": {
+   "field": false,
+   "above": true
+  },
+  "cfaae04270b4e332": {
+   "field": false,
+   "above": true
+  },
+  "1e35af68834d30f5": {
+   "above": true
+  },
+  "2f89ffc834dc3f3e": {
+   "field": true,
+   "above": false
+  },
+  "12208568fa1d9f06": {
+   "field": false,
+   "above": false
+  },
+  "c6188ff8a849943e": {
+   "field": false,
+   "above": false
+  },
+  "715a451501357fc7": {
+   "field": false,
+   "above": false
+  },
+  "a7a99ae7dc8d63f0": {
+   "above": true
+  },
+  "a8436a1a0fe915cd": {
+   "field": false,
+   "above": false
+  },
+  "0d6370e6e34a48fb": {
+   "field": false,
+   "above": false
+  },
+  "50e88589fe30f655": {
+   "field": false,
+   "above": false
+  },
+  "941381e2f2f1ab30": {
+   "field": true,
+   "above": false
+  },
+  "76182a0605e98cee": {
+   "field": false
+  },
+  "b8feefe08860c203": {
+   "field": false
+  },
+  "425dc4dacece2dd7": {
+   "field": false
+  },
+  "84884ee2198e1245": {
+   "field": true,
+   "above": true
+  },
+  "b48d1fe072c8ea7f": {
+   "above": true
+  },
+  "922657b41042c7cc": {
+   "field": true,
+   "above": true
+  },
+  "c8c2529a644537b6": {
+   "above": true
+  },
+  "a7dda9476f445ad1": {
+   "field": false,
+   "above": false
+  },
+  "0048656e4df680c1": {
+   "field": true,
+   "above": false
+  },
+  "c9a72969afc360e5": {
+   "field": true,
+   "above": false
+  },
+  "60ebdade702e2509": {
+   "field": false,
+   "above": false
+  }
+ }
+}
