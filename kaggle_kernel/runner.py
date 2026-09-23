@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -38,12 +39,26 @@ spec_path = glob.glob("/kaggle/input/**/spec.json", recursive=True)
 SPEC = json.load(open(spec_path[0]))
 BUDGET = SPEC["time_budget_s"]
 RESULT = {"triage": {}, "eval": {}, "meta": {"spec_id": SPEC["spec_id"], "log": LOG, "errors": []}}
+LOCK = threading.Lock()   # both GPU workers write RESULT and save it; serialise (the 2nd real run crashed here)
+
+
+def record(section, key, value):
+    with LOCK:
+        RESULT[section][key] = value
+
+
+def error(msg):
+    with LOCK:
+        RESULT["meta"]["errors"].append(msg)
 
 
 def save():
-    RESULT["meta"]["elapsed_s"] = round(time.time() - T0)
+    with LOCK:
+        RESULT["meta"]["elapsed_s"] = round(time.time() - T0)
+        text = json.dumps(RESULT)
     tmp = OUT + ".tmp"
-    json.dump(RESULT, open(tmp, "w"))
+    with open(tmp, "w") as f:
+        f.write(text)
     os.replace(tmp, OUT)
 
 
@@ -111,7 +126,7 @@ if not PORTS and fla:
     sh(f"cd /tmp/kev && uv pip uninstall -q -p {PY} flash-linear-attention", check=False)
     procs, PORTS = start_servers()
 if not PORTS:
-    RESULT["meta"]["errors"].append("no Kev server became ready")
+    error("no Kev server became ready")
     save()
     sys.exit(1)
 log(f"Kev ready on ports {PORTS}")
@@ -143,9 +158,11 @@ def run_parallel(items, fn, label):
             try:
                 fn(port, items[j])
             except Exception as e:           # one bad item must not sink the run
-                RESULT["meta"]["errors"].append(f"{label} {j}: {e}")
-            done += 1
-            if done % 10 == 0:
+                error(f"{label} {j}: {e}")
+            with LOCK:
+                done += 1
+                due = done % 10 == 0
+            if due:
                 save()
     with ThreadPoolExecutor(len(PORTS)) as ex:
         list(ex.map(worker, range(len(PORTS))))
@@ -160,7 +177,7 @@ tri = SPEC["triage"]
 def do_triage(port, batch):
     ans = ask(port, tri["state"], batch["questions"])
     for k, jid in enumerate(batch["ids"]):
-        RESULT["triage"][jid] = {"field": ans[f"field_{k}"]["noul"], "above": ans[f"above_{k}"]["noul"]}
+        record("triage", jid, {"field": ans[f"field_{k}"]["noul"], "above": ans[f"above_{k}"]["noul"]})
 
 
 run_parallel(tri["batches"], do_triage, "triage")
@@ -180,7 +197,7 @@ t = time.time()
 
 
 def do_eval(port, jid):
-    RESULT["eval"][jid] = ask(port, {"candidate": SPEC["candidate"], "job": SPEC["jobs"][jid]}, SPEC["eval_questions"])
+    record("eval", jid, ask(port, {"candidate": SPEC["candidate"], "job": SPEC["jobs"][jid]}, SPEC["eval_questions"]))
 
 
 run_parallel(candidates, do_eval, "eval")
