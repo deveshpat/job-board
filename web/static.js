@@ -357,7 +357,7 @@
     S.key = key;
     if (remember) await idb.set("remembered_key", Vault.b64(key));
     const tok = await idb.get("token.enc");
-    try { if (tok) S.token = (await Vault.decryptBlob(key, "token", tok)).token; } catch (_) { S.token = null; }
+    try { if (tok) ({ token: S.token, saved_at: S.tokenAt } = await Vault.decryptBlob(key, "token", tok)); } catch (_) { S.token = null; }
     const local = await idb.get("user.local");
     S.dirty = !!(await idb.get("user.dirty"));
     S.userSha = await idb.get("user.sha");
@@ -369,7 +369,7 @@
       S.user = null; S.board = null; S.dirty = false; S.userSha = null;
       for (const k of ["user.local", "user.dirty", "user.sha", "board.enc", "token.enc"]) await idb.del(k);
     }
-    try { await loadRemote(); } catch (e) { console.warn("offline — using this device's copy", e); }
+    try { await loadRemote(); await adoptRemoteToken(); } catch (e) { console.warn("offline — using this device's copy", e); }
     if (!S.user) throw new Error("No data yet — publish from the Mac app first.");
     S.user.decisions ||= {}; S.user.applications ||= []; S.user.deleted_apps ||= {};
     navigator.storage?.persist?.();          // ask the browser not to evict this site's storage
@@ -437,11 +437,27 @@
     });
   }
 
+  // -- the GitHub token travels inside your encrypted data (token.enc on the data branch) ------------------
+  async function adoptRemoteToken() {
+    const f = await GH.file("token.enc");                  // public repo: readable before we have a token
+    if (!f) return;
+    const t = await Vault.decryptBlob(S.key, "token", f.text);
+    if (t.token && t.token !== S.token && (t.saved_at || "") >= (S.tokenAt || "")) {
+      S.token = t.token; S.tokenAt = t.saved_at;
+      await idb.set("token.enc", await Vault.encryptBlob(S.key, "token", t));
+    }
+  }
+
   // -- things only the web app does (Profile → Sync & security card) ---------------------------------------
   async function setToken(token) {
     S.token = token || null;
-    if (token) await idb.set("token.enc", await Vault.encryptBlob(S.key, "token", { token }));
-    else await idb.del("token.enc");
+    S.tokenAt = nowIso();
+    if (token) {
+      const t = { token, saved_at: S.tokenAt };
+      await idb.set("token.enc", await Vault.encryptBlob(S.key, "token", t));
+      const f = await GH.file("token.enc").catch(() => null);      // share it with your other devices
+      await GH.put("token.enc", await Vault.encryptBlob(S.key, "token", t), f?.sha, "encrypted sync token").catch((e) => console.warn(e));
+    } else await idb.del("token.enc");
     S.runsAt = 0;
     await push();
   }

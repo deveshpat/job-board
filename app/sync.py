@@ -99,8 +99,10 @@ class Sync:
             keys = {"v": 1, "wraps": [vault.wrap_passphrase(key, passphrase)]}
         # Remember repo, token and data key now, so a retry after any later failure needs none of them again.
         # (Local database only — data/ is never published.)
+        token_changed = token != saved.get("token")
         self.db.put("github", {**saved, "owner": owner, "repo": repo, "token": token, "api": api,
-                               "data_key": vault.b64(key), "enabled": saved.get("enabled", False)})
+                               "data_key": vault.b64(key), "enabled": saved.get("enabled", False),
+                               "token_saved_at": now() if token_changed else saved.get("token_saved_at")})
         if gh.is_empty():
             self.log("Empty repository — creating its first commit")
             gh.seed_empty_repo()
@@ -132,6 +134,7 @@ class Sync:
                                "data_key": vault.b64(key), "enabled": True, "pages_manual": not pages_ok})
         if existing:
             self.sync_once()
+        self._sync_token(gh, key)
         self.db.put("github", {**self.cfg, "last_sync": now(), "last_error": None})
         return self.public()
 
@@ -183,6 +186,7 @@ class Sync:
                 gh, key = self.gh(), self.key()
                 changed = self._sync_user(gh, key)
                 pulled = self._pull_pipeline(gh, key)
+                self._sync_token(gh, key)
                 self.db.put("github", {**self.cfg, "last_sync": now(), "last_error": None})
                 return {"ok": True, "pushed": changed, "pulled_jobs": pulled}
             except Exception as e:
@@ -206,6 +210,22 @@ class Sync:
                 if not getattr(e, "conflict", False):
                     raise                                   # someone else saved in between: merge again
         raise GitHubError("user.enc kept changing; will retry next sync")
+
+    def _sync_token(self, gh: GitHub, key: bytes) -> None:
+        """token.enc: the GitHub token, encrypted with the data key, so every device that unlocks (passphrase or
+        passkey) can sync without pasting it. Newest wins, so replacing it on any device updates the rest."""
+        c = self.cfg
+        mine = {"token": c["token"], "saved_at": c.get("token_saved_at") or ""}
+        f = gh.file("token.enc")
+        theirs = vault.decrypt(key, "token", f[1]) if f else None
+        if theirs and theirs.get("token") == mine["token"]:
+            return
+        if theirs and (theirs.get("saved_at") or "") > mine["saved_at"]:
+            self.db.put("github", {**c, "token": theirs["token"], "token_saved_at": theirs["saved_at"]})
+            return
+        mine["saved_at"] = mine["saved_at"] or now()
+        gh.put("token.enc", vault.encrypt(key, "token", mine), f[0] if f else None, "encrypted sync token")
+        self.db.put("github", {**self.cfg, "token_saved_at": mine["saved_at"]})
 
     def _pull_pipeline(self, gh: GitHub, key: bytes) -> int:
         f = gh.file("pipeline.enc")

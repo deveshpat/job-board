@@ -582,7 +582,8 @@ function renderSync() {
   box.innerHTML = `
     <h3 class="section-title">Sync &amp; security</h3>
     <p class="faint" style="font-size:13px;margin-top:0">This device keeps an encrypted copy; changes sync to <b>${esc(st.repo.owner)}/${esc(st.repo.repo)}</b>
-      (branch <code>data</code>) ${st.token ? "" : "once you add a token"}.${st.dirty ? " <b>Unsynced changes pending.</b>" : ""}</p>
+      (branch <code>data</code>)${st.token ? "" : " once a token is available"}.${st.dirty ? " <b>Unsynced changes pending.</b>" : ""}
+      The GitHub token is stored in your encrypted data, so every device you unlock picks it up automatically — you only need this field to replace it.</p>
     <div class="field-row"><label>GitHub token</label>
       <div class="add-row" style="margin:0"><input class="input" type="password" id="s-token" placeholder="${st.token ? "•••• saved (type to replace)" : "fine-grained token for this repo"}" autocomplete="off">
       <button class="btn" id="s-token-save">Save</button></div></div>

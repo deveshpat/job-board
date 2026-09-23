@@ -401,7 +401,7 @@ def test_publish_and_two_device_sync(tmp_path, fake_github):
 
     assert {"app/main.py", ".github/workflows/daily.yml", "web/static.js"} <= set(fg.BRANCHES["main"])
     assert not any(p.startswith(("data/", "engines/", "bench/engines/")) or p == ".env" for p in fg.BRANCHES["main"])
-    assert set(fg.BRANCHES["data"]) == {"keys.json", "README.md", "user.enc", "pipeline.enc", "board.enc"}
+    assert set(fg.BRANCHES["data"]) == {"keys.json", "README.md", "user.enc", "pipeline.enc", "board.enc", "token.enc"}
     assert len(fg.RUNS) == 2                                                   # Pages deploy + first run started
     assert "README.md" in fg.BRANCHES["main"]                                  # empty repo was seeded first
     assert fg.SECRETS["JOBBOARD_DATA_KEY"] == mac1.get("github")["data_key"]
@@ -409,6 +409,8 @@ def test_publish_and_two_device_sync(tmp_path, fake_github):
     key = vault.unb64(fg.SECRETS["JOBBOARD_DATA_KEY"])
     assert b"k" * 32 not in fg.BRANCHES["data"]["user.enc"][1]                # keys never in the repo
     assert vault.unlock(json.loads(fg.BRANCHES["data"]["keys.json"][1]), phrase) == key
+    assert vault.decrypt(key, "token", fg.BRANCHES["data"]["token.enc"][1])["token"] == "tok"   # for other devices
+    assert b"tok" not in fg.BRANCHES["data"]["token.enc"][1].replace(b"token", b"")          # not in the clear
 
     # A second Mac joins with the same passphrase and gets the tracker — with a token lacking Pages permission.
     fg.PAGES_ALLOWED["ok"] = False
