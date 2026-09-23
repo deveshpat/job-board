@@ -43,9 +43,29 @@
       if (S.token) h.Authorization = `Bearer ${S.token}`;
       return h;
     },
+    // Without a token, read public files from raw.githubusercontent.com: the anonymous API allows only
+    // 60 requests/hour per network and a locked-out read must not look like "no data".
+    async rawFile(path) {
+      if (S.cfg.api) return null;                            // local test stand-in has no raw host
+      const r = await fetch(`https://raw.githubusercontent.com/${S.cfg.owner}/${S.cfg.repo}/data/${path}?t=${Date.now()}`, { cache: "no-store" });
+      if (r.status === 404) return { missing: true };
+      if (!r.ok) return null;
+      return { sha: null, text: await r.text() };
+    },
     async file(path) {                        // → {sha, text} | null
+      if (!S.token) {
+        const raw = await GH.rawFile(path);
+        if (raw) return raw.missing ? null : raw;
+      }
       const r = await fetch(GH.url(`/contents/${path}?ref=data&t=${Date.now()}`), { headers: GH.headers(), cache: "no-store" });
       if (r.status === 404) return null;
+      if (r.status === 403 || r.status === 429) {
+        const raw = await GH.rawFile(path);                  // rate-limited API: fall back to the raw file
+        if (raw) return raw.missing ? null : raw;
+        const e = new Error("GitHub is rate-limiting this network for a few minutes — try again shortly.");
+        e.rateLimited = true;
+        throw e;
+      }
       if (!r.ok) throw new Error(`GitHub ${r.status} reading ${path}`);
       const meta = await r.json();
       if (meta.content && meta.encoding === "base64")
@@ -140,6 +160,7 @@
 
   async function push() {
     if (!S.dirty || !S.token) return;
+    if (!S.userSha) { const f = await GH.file("user.enc").catch(() => null); S.userSha = f?.sha || null; }
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const text = await Vault.encryptBlob(S.key, "user", S.user);
@@ -369,8 +390,11 @@
       S.user = null; S.board = null; S.dirty = false; S.userSha = null;
       for (const k of ["user.local", "user.dirty", "user.sha", "board.enc", "token.enc"]) await idb.del(k);
     }
-    try { await loadRemote(); await adoptRemoteToken(); } catch (e) { console.warn("offline — using this device's copy", e); }
-    if (!S.user) throw new Error("No data yet — publish from the Mac app first.");
+    let remoteError = null;
+    try { await adoptRemoteToken(); await loadRemote(); }
+    catch (e) { remoteError = e; console.warn("couldn't reach GitHub — using this device's copy", e); }
+    if (!S.user) throw new Error(remoteError ? `Couldn't load your data: ${remoteError.message}`
+                                             : "No data yet — publish from the Mac app first.");
     S.user.decisions ||= {}; S.user.applications ||= []; S.user.deleted_apps ||= {};
     navigator.storage?.persist?.();          // ask the browser not to evict this site's storage
     push();
