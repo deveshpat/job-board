@@ -1,0 +1,13 @@
+{
+ "v": 1,
+ "wraps": [
+  {
+   "kind": "passphrase",
+   "kdf": "PBKDF2-SHA256",
+   "iterations": 600000,
+   "salt": "wEAgl3UI3AEkXgxgnXDwhw==",
+   "iv": "jAAghwPQZW8cHqcJ",
+   "ct": "jn4+E4HVZTn6lT6/nW2w3KH8SapPX+6SCqu2/FHXXh9YY5RWHW8TUTea5XlsZQLg"
+  }
+ ]
+}
