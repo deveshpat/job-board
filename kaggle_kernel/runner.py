@@ -78,7 +78,10 @@ def start_servers():
     procs, ports = [], []
     slots = [str(i) for i in range(len(gpus))] or [""]
     for i, dev in enumerate(slots):
-        env = dict(os.environ, CUDA_VISIBLE_DEVICES=dev, KEV_DTYPE="fp16" if gpus else "fp32")
+        # KEV_MERGE=0: load straight in fp16. Kev's default merges its LoRA in fp32 first, which needs ~16 GB
+        # for the 4B model — more than a T4's 14.5 GB (the first real run died with CUDA out-of-memory).
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=dev, KEV_DTYPE="fp16" if gpus else "fp32", KEV_MERGE="0",
+                   PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
         port = 8011 + i
         f = open(f"/kaggle/working/kev-{i}.log", "w")
         procs.append(subprocess.Popen([PY, "-m", "kev.serve", "--run", SPEC["kev_run"], "--port", str(port)],

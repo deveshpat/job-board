@@ -484,3 +484,29 @@ def test_kaggle_slots():
     assert [r["slot"] for r in a] == [2, 1, 3]
     with pytest.raises(ValueError):
         assign_slots([{"username": str(i)} for i in range(6)])
+
+
+def test_kaggle_kernel_failure_does_not_burn_other_accounts(tmp_path, monkeypatch):
+    """If the kernel itself fails (e.g. out of GPU memory), trying the next account would fail the same way."""
+    from app import kaggle as kg
+    db = DB(tmp_path / "db.sqlite")
+    kg.Accounts(db).save([{"username": u, "key": "k" * 32, "enabled": True} for u in ("a1", "a2", "a3")])
+
+    class OOMKaggle(FakeKaggle):
+        def run(self, *args, timeout=0):
+            from app.kaggle import CLI_Result
+            if args[:2] == ("kernels", "output"):
+                import json as _json
+                out = Path(args[args.index("-p") + 1])
+                (out / "answers.json").write_text(_json.dumps({"triage": {}, "eval": {}, "meta": {
+                    "spec_id": FakeKaggle.spec["spec_id"], "errors": ["no Kev server became ready"]}}))
+                (out / "kev-0.log").write_text("torch.OutOfMemoryError: CUDA out of memory")
+                return CLI_Result(0, "downloaded")
+            return super().run(*args, timeout=timeout)
+
+    FakeKaggle.behaviour, FakeKaggle.calls = {}, []
+    runner = kg.KaggleRunner(db, cli_factory=OOMKaggle, sleep=lambda s: None)
+    with pytest.raises(kg.KaggleError) as e:
+        runner.run({"triage": {"batches": []}, "jobs": {}, "select": {"max_deep": 1}, "candidate": {}, "eval_questions": {}})
+    assert e.value.run
+    assert [u for u, a in FakeKaggle.calls if a == ("kernels", "push")] == ["a1"]        # stopped after one account

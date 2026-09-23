@@ -42,9 +42,10 @@ QUOTA_RE = re.compile(r"quota|exceed|limit reached|maximum .*hours|out of .*hour
 
 
 class KaggleError(RuntimeError):
-    def __init__(self, msg: str, quota: bool = False):
+    """quota: this account's GPU hours are used up · run: the kernel itself failed (same on every account)."""
+    def __init__(self, msg: str, quota: bool = False, run: bool = False):
         super().__init__(msg)
-        self.quota = quota
+        self.quota, self.run = quota, run
 
 
 def week_start(now: datetime) -> datetime:
@@ -180,6 +181,9 @@ class KaggleRunner:
                     until = next_reset(datetime.now(timezone.utc)).isoformat()
                     self.accounts.update(a["username"], gpu_blocked_until=until, quota_message=str(e)[:500])
                     self.log(f"  {a['username']}: GPU quota used up — skipping it until {until[:16]} UTC")
+                elif e.run:          # the kernel ran and failed: every account would fail the same way
+                    self.log(f"  {a['username']}: the Kaggle run itself failed — not retrying on other accounts")
+                    raise
                 else:
                     self.log(f"  {a['username']}: GPU run failed — {str(e)[:200]}")
         for a in self.accounts.cpu_order():
@@ -228,7 +232,9 @@ class KaggleRunner:
             self.accounts.record_run(user, accel, started, seconds, status)
             if not answers or answers.get("meta", {}).get("spec_id") != spec["spec_id"]:
                 quota = bool(QUOTA_RE.search(logs)) and status != "complete"
-                raise KaggleError(f"run {status} without results. {logs[-400:]}", quota=quota)
+                raise KaggleError(f"run {status} without results. {logs[-400:]}", quota=quota, run=not quota)
+            if not answers.get("triage") and answers.get("meta", {}).get("errors"):
+                raise KaggleError(f"kernel failed: {answers['meta']['errors'][:3]}", run=True)
             m = answers["meta"]
             self.log(f"Kaggle run {status} in {seconds / 60:.0f} min on {', '.join(m.get('device', []))}: "
                      f"{len(answers['triage'])} titles, {len(answers['eval'])} evaluations"
