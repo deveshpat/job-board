@@ -1,6 +1,6 @@
 """The scheduled run, as GitHub Actions executes it (.github/workflows/daily.yml).
 
-  JOBBOARD_DATA_KEY=<base64> KAGGLE_KEY_<USERNAME>=<key> ... python scripts/ci_run.py --state state/ [--force]
+  JOBBOARD_DATA_KEY=<base64> KAGGLE_KEY_1=<key> ... KAGGLE_KEY_5=<key> python scripts/ci_run.py --state state/ [--force]
 
 The workflow fires every hour; this exits quietly unless settings.daily_at (in settings.tz_offset_min, your
 timezone) has passed today and no run happened yet today — so the web app can change the time.
@@ -36,10 +36,6 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
     ap.add_argument("--force", action="store_true", help="run now even if not due (manual dispatch)")
     args = ap.parse_args(argv)
     key = vault.unb64(os.environ["JOBBOARD_DATA_KEY"])
-    # One secret per account (KAGGLE_KEY_<USERNAME>), so each can be replaced without re-entering the others.
-    all_secrets = json.loads(os.environ.get("ALL_SECRETS") or "{}") or dict(os.environ)
-    secrets = [{"username": k[len("KAGGLE_KEY_"):], "key": v} for k, v in all_secrets.items()
-               if k.startswith("KAGGLE_KEY_") and v]
 
     with tempfile.TemporaryDirectory() as tmp:
         db = DB(Path(tmp) / "run.sqlite")
@@ -52,12 +48,13 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
         if not args.force and not _due(db):
             print("Not due yet — nothing to do.")
             return 3
-        # Keys come only from the KAGGLE_ACCOUNTS secret; enabled flags and usage from the stored state.
+        # Keys come only from the KAGGLE_KEY_<slot> secrets; user.enc says which account is in which slot.
         accts = {a["username"]: a for a in db.get("kaggle_accounts", [])}
-        for s in secrets:
-            # Secret names are upper-cased by GitHub; match accounts case-insensitively.
-            name = next((u for u in accts if _secret_suffix(u) == s["username"]), s["username"].lower())
-            accts[name] = {**accts.get(name, {"enabled": True}), "username": name, "key": s["key"]}
+        for k in user.get("kaggle") or []:
+            kaggle_key = os.environ.get(f"KAGGLE_KEY_{k.get('slot')}") if k.get("slot") else None
+            if kaggle_key:
+                accts[k["username"]] = {**accts.get(k["username"], {}), "username": k["username"], "key": kaggle_key,
+                                        "enabled": k.get("enabled", True)}
         Accounts(db).save([a for a in accts.values() if a.get("key")])
         db.put("settings", {**db.get("settings", {}), "engine_mode": "kaggle", "local_fallback": False})
 
@@ -77,12 +74,6 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
         (args.state / "pipeline.enc").write_bytes(vault.encrypt(key, "pipeline", state.export_pipeline(db)))
         (args.state / "board.enc").write_bytes(vault.encrypt(key, "board", state.export_board(db)))
     return code
-
-
-def _secret_suffix(username: str) -> str:
-    """KAGGLE_KEY_<this>: GitHub secret names allow only A-Z, 0-9 and _ (web/static.js does the same)."""
-    import re
-    return re.sub(r"[^A-Z0-9_]", "_", username.upper())
 
 
 def _due(db: DB) -> bool:

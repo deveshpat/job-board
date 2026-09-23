@@ -471,7 +471,15 @@ async function renderGithub() {
       ${g.pages_manual ? `<p class="warnbox">One step left for the web app: on GitHub open <a href="https://github.com/${esc(g.owner)}/${esc(g.repo)}/settings/pages" target="_blank" rel="noopener">Settings → Pages</a> and set <b>Source: GitHub Actions</b>, then re-run the <i>Pages</i> workflow from the Actions tab. (Your token can't do this itself — it has no Pages permission.) Daily runs already work without it.</p>` : ""}
       <p class="faint" style="font-size:13px;margin:0 0 12px">Daily runs happen on GitHub Actions (Kev on Kaggle). This Mac syncs your data every 5 minutes and a few seconds after each change.
         Last sync: ${esc((g.last_sync || "never").replace("T", " "))} UTC${g.last_error ? ` · <span style="color:var(--bad)">${esc(g.last_error)}</span>` : ""}</p>
-      <div style="display:flex;gap:10px"><button class="btn" id="g-sync">Sync now</button><button class="btn" id="g-off">Disconnect</button></div>`;
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="g-sync">Sync now</button>
+        <button class="btn" id="g-update" title="Re-upload the app code and workflows, refresh secrets, and start a run">Update app on GitHub</button>
+        <button class="btn" id="g-off">Disconnect</button></div>`;
+    $("#g-update").onclick = async (e) => {
+      e.target.disabled = true; e.target.textContent = "Updating…";
+      try { await api("/api/github/publish", { json: { repo: `${g.owner}/${g.repo}` } }); toast("Updated — the new code is on GitHub and a run has started"); }
+      catch (err) { toast(err.message); }
+      renderGithub();
+    };
     $("#g-sync").onclick = async () => { const r = await api("/api/github/sync", { method: "POST" }); toast(r.ok ? "Synced" : `Sync failed: ${r.detail}`); renderGithub(); };
     $("#g-off").onclick = async () => { await api("/api/github/disconnect", { method: "POST" }); toast("GitHub sync off — runs happen on this Mac again"); renderGithub(); };
     return;

@@ -98,6 +98,9 @@ class GitHub:
         self._req("PUT", f"/actions/secrets/{name}", json={"encrypted_value": base64.b64encode(sealed).decode(),
                                                            "key_id": pk["key_id"]})
 
+    def delete_secret(self, name: str) -> None:
+        self._req("DELETE", f"/actions/secrets/{name}", ok=(204, 404))
+
     def enable_pages(self) -> bool:
         """True if Pages is on (or was already). False if the token may not do it (no Pages permission):
         the user then flips it once in Settings → Pages → Source: GitHub Actions."""

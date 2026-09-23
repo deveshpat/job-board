@@ -2,7 +2,7 @@
 
 publish(): one-time setup (or joining an existing setup from another Mac with the same passphrase):
   code → main (Pages + the scheduled workflow), encrypted state → data, JOBBOARD_DATA_KEY and
-  KAGGLE_KEY_<USER> → Actions secrets, Pages switched on.
+  KAGGLE_KEY_<slot 1-5> → Actions secrets, Pages switched on.
 sync_once(): your data (user.enc) merges both ways; the scheduled run's results (pipeline.enc) flow in.
 While GitHub sync is on, the daily run happens on GitHub Actions, not on this Mac.
 """
@@ -26,8 +26,20 @@ keys.json is AES-256-GCM ciphertext; keys.json holds the data key wrapped by you
 """
 
 
-def secret_name(username: str) -> str:
-    return "KAGGLE_KEY_" + re.sub(r"[^A-Z0-9_]", "_", username.upper())
+MAX_KAGGLE_SLOTS = 5          # .github/workflows/daily.yml passes KAGGLE_KEY_1 … KAGGLE_KEY_5
+
+
+def assign_slots(accounts: list) -> list:
+    """Give every account a stable slot 1..5 (kept once assigned); raises if there are more than 5."""
+    used = {a["slot"] for a in accounts if a.get("slot")}
+    for a in accounts:
+        if not a.get("slot"):
+            free = next((n for n in range(1, MAX_KAGGLE_SLOTS + 1) if n not in used), None)
+            if free is None:
+                raise ValueError(f"At most {MAX_KAGGLE_SLOTS} Kaggle accounts can be used with GitHub runs.")
+            a["slot"] = free
+            used.add(free)
+    return accounts
 
 
 class Sync:
@@ -94,6 +106,9 @@ class Sync:
             gh.seed_empty_repo()
         self.log("Uploading the app to main…")
         gh.commit_files("main", publishable_files(), "Job board app")
+        self.log("Saving secrets…")
+        gh.set_secret("JOBBOARD_DATA_KEY", vault.b64(key))
+        self.push_kaggle_keys(gh)                    # assigns slots first, so the snapshot below includes them
         if not existing:
             self.log("Creating the encrypted data branch…")
             user = self._export_user()
@@ -103,11 +118,8 @@ class Sync:
                 "pipeline.enc": vault.encrypt(key, "pipeline", state.export_pipeline(self.db)),
                 "board.enc": vault.encrypt(key, "board", state.export_board(self.db)),
             }, "Encrypted job-board data", orphan=True)
-        self.log("Saving secrets…")
-        gh.set_secret("JOBBOARD_DATA_KEY", vault.b64(key))
-        for a in self.db.get("kaggle_accounts", []):
-            if a.get("key"):
-                gh.set_secret(secret_name(a["username"]), a["key"])
+        for a in self.db.get("kaggle_accounts", []):        # earlier versions named secrets by username
+            gh.delete_secret("KAGGLE_KEY_" + re.sub(r"[^A-Z0-9_]", "_", a["username"].upper()))
         pages_ok = gh.enable_pages()
         if not pages_ok:
             self.log("  the token can't switch Pages on — do it once in Settings → Pages → Source: GitHub Actions")
@@ -135,6 +147,22 @@ class Sync:
             return key
         except Exception:
             return None
+
+    def push_kaggle_keys(self, gh: Optional[GitHub] = None, only: Optional[set] = None) -> None:
+        """Save the Mac's Kaggle keys as KAGGLE_KEY_<slot> secrets (all, or just the usernames in `only`)."""
+        gh = gh or self.gh()
+        accts = assign_slots(self.db.get("kaggle_accounts", []))
+        for a in accts:
+            if a.get("key") and (only is None or a["username"] in only):
+                gh.set_secret(f"KAGGLE_KEY_{a['slot']}", a["key"])
+                a["key_set"] = True
+        self.db.put("kaggle_accounts", accts)
+        self.db.touch("kaggle")
+
+    def remove_kaggle_slots(self, slots: set) -> None:
+        gh = self.gh()
+        for n in slots:
+            gh.delete_secret(f"KAGGLE_KEY_{n}")
 
     def disconnect(self) -> None:
         self.db.put("github", {**self.cfg, "enabled": False})

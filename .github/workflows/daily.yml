@@ -30,7 +30,12 @@ jobs:
         name: Run pipeline on Kaggle
         env:
           JOBBOARD_DATA_KEY: ${{ secrets.JOBBOARD_DATA_KEY }}
-          ALL_SECRETS: ${{ toJSON(secrets) }}          # KAGGLE_KEY_<USERNAME>, one per account
+          # One secret per Kaggle account slot; which username is in which slot is stored (encrypted) in user.enc.
+          KAGGLE_KEY_1: ${{ secrets.KAGGLE_KEY_1 }}
+          KAGGLE_KEY_2: ${{ secrets.KAGGLE_KEY_2 }}
+          KAGGLE_KEY_3: ${{ secrets.KAGGLE_KEY_3 }}
+          KAGGLE_KEY_4: ${{ secrets.KAGGLE_KEY_4 }}
+          KAGGLE_KEY_5: ${{ secrets.KAGGLE_KEY_5 }}
           KAGGLE_CLI: kaggle
           JOBBOARD_KAGGLE_BUDGET_H: "4.5"
         run: |

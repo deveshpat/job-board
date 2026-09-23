@@ -282,8 +282,18 @@ async def put_kaggle_accounts(request: Request):
             raise HTTPException(400, f"That doesn't look like a Kaggle API key for {user}")
         saved.append({**prev, "username": user, "key": key, "enabled": bool(a.get("enabled", True)),
                       "verified": prev.get("verified") if key == prev.get("key") else None})
+    removed_slots = {a.get("slot") for u, a in old.items() if u not in seen and a.get("slot")}
+    for a in saved:                                   # keep each account's GitHub slot
+        a["slot"] = old.get(a["username"], {}).get("slot")
     kaggle_accounts.save(saved)
     db.touch("kaggle")
+    if sync.enabled:
+        try:
+            changed = {a["username"] for a in incoming if (a.get("key") or "").strip()}
+            sync.push_kaggle_keys(only=changed)
+            sync.remove_kaggle_slots(removed_slots)
+        except Exception as e:
+            raise HTTPException(502, f"Saved here, but couldn't update GitHub secrets: {e}")
     return kaggle_accounts.public()
 
 

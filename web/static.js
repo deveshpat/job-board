@@ -87,7 +87,7 @@
       await fetch(GH.url(`/actions/secrets/${name}`), { method: "DELETE", headers: GH.headers() });
     },
   };
-  const secretName = (user) => `KAGGLE_KEY_${user.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`;
+  const MAX_SLOTS = 5;                      // .github/workflows/daily.yml passes KAGGLE_KEY_1 … KAGGLE_KEY_5
 
   // -- user-state merge (same rules as app/state.py merge_user) ----------------------------------------
   function mergeUser(a, b) {
@@ -95,7 +95,7 @@
     if (!b) return a;
     const out = { schema: 1, exported_at: nowIso(), meta: {} };
     for (const part of ["profile", "settings", "kaggle"]) {
-      const src = (a.meta?.[part] || "") >= (b.meta?.[part] || "") ? a : b;
+      const src = (a.meta?.[part] || "") > (b.meta?.[part] || "") ? a : b;   // tie → remote (b) wins, like app/state.py
       out[part] = src[part];
       out.meta[part] = src.meta?.[part] || "";
     }
@@ -311,17 +311,25 @@
         username: k.username, enabled: k.enabled !== false, key_hint: k.key_set ? "•••• in GitHub secrets" : "", verified: null }));
     }
     if (p === "/api/kaggle/accounts" && method === "PUT") {
-      const before = new Set((S.user.kaggle || []).map((k) => k.username));
+      const prevList = S.user.kaggle || [];
       const next = [];
+      const used = new Set(body.map((a) => prevList.find((k) => k.username === a.username)?.slot).filter(Boolean));
       for (const a of body) {
-        const prev = (S.user.kaggle || []).find((k) => k.username === a.username) || {};
+        const prev = prevList.find((k) => k.username === a.username) || {};
+        let slot = prev.slot;
+        if (!slot) {
+          slot = [1, 2, 3, 4, 5].find((n) => !used.has(n));
+          if (!slot) httpError(`At most ${MAX_SLOTS} Kaggle accounts can be used with GitHub runs.`);
+          used.add(slot);
+        }
         if (a.key) {
           if (!S.token) httpError("Add your GitHub token first — keys are saved as repository secrets.");
-          await GH.setSecret(secretName(a.username), a.key);
+          await GH.setSecret(`KAGGLE_KEY_${slot}`, a.key);
         }
-        next.push({ username: a.username, enabled: a.enabled !== false, key_set: !!(a.key || prev.key_set) });
+        next.push({ username: a.username, enabled: a.enabled !== false, slot, key_set: !!(a.key || prev.key_set) });
       }
-      for (const u of before) if (!next.find((k) => k.username === u) && S.token) await GH.deleteSecret(secretName(u));
+      for (const k of prevList)
+        if (!next.find((n) => n.username === k.username) && k.slot && S.token) await GH.deleteSecret(`KAGGLE_KEY_${k.slot}`);
       S.user.kaggle = next;
       changed("kaggle");
       return api("/api/kaggle/accounts");

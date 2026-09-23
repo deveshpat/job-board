@@ -322,8 +322,8 @@ def test_ci_run_scheduled_flow(tmp_path, monkeypatch):
     (folder / "user.enc").write_bytes(vault.encrypt(key, "user", state.export_user(dev)))
 
     monkeypatch.setenv("JOBBOARD_DATA_KEY", vault.b64(key))
-    monkeypatch.setenv("KAGGLE_KEY_ACCT_A", "k" * 32)
-    dev.put("kaggle_accounts", [{"username": "acct-a", "enabled": True}]); dev.touch("kaggle")   # hyphen → ACCT_A
+    monkeypatch.setenv("KAGGLE_KEY_2", "k" * 32)                                  # slot 2 holds acct-a
+    dev.put("kaggle_accounts", [{"username": "acct-a", "enabled": True, "slot": 2, "key_set": True}]); dev.touch("kaggle")
     (folder / "user.enc").write_bytes(vault.encrypt(key, "user", state.export_user(dev)))
     monkeypatch.setattr(pl, "fetch_all", lambda *a, **k: _jobs())
     FakeKaggle.behaviour = {}
@@ -336,7 +336,7 @@ def test_ci_run_scheduled_flow(tmp_path, monkeypatch):
     assert by_url["https://example.com/4"]["status"] == "applied" and not by_url["https://example.com/4"]["card"]
     assert all(j["card"] for j in board["jobs"] if j["status"] == "new")        # tracker link skipped, rest scored
     assert "k" * 32 not in (folder / "pipeline.enc").read_bytes().decode() and all("key" not in a for a in pipe["kaggle_accounts"])
-    assert [a["username"] for a in pipe["kaggle_accounts"]] == ["acct-a"]      # secret matched despite the hyphen
+    assert [a["username"] for a in pipe["kaggle_accounts"]] == ["acct-a"]      # key found through its slot
     assert pipe["kaggle_accounts"][0]["runs"]                                 # GPU usage persisted across runs
 
     # Another device rejects a job; the next scheduled run keeps that decision and re-processes nothing.
@@ -405,7 +405,7 @@ def test_publish_and_two_device_sync(tmp_path, fake_github):
     assert len(fg.RUNS) == 2                                                   # Pages deploy + first run started
     assert "README.md" in fg.BRANCHES["main"]                                  # empty repo was seeded first
     assert fg.SECRETS["JOBBOARD_DATA_KEY"] == mac1.get("github")["data_key"]
-    assert fg.SECRETS["KAGGLE_KEY_ACCT_A"] == "k" * 32
+    assert fg.SECRETS["KAGGLE_KEY_1"] == "k" * 32 and "KAGGLE_KEY_ACCT_A" not in fg.SECRETS
     key = vault.unb64(fg.SECRETS["JOBBOARD_DATA_KEY"])
     assert b"k" * 32 not in fg.BRANCHES["data"]["user.enc"][1]                # keys never in the repo
     assert vault.unlock(json.loads(fg.BRANCHES["data"]["keys.json"][1]), phrase) == key
@@ -457,14 +457,30 @@ def test_publish_retry_reuses_saved_credentials(tmp_path, fake_github):
     db = DB(tmp_path / "mac.sqlite")
     db.put("profile", {"name": "Test"}); db.touch("profile")
     s = Sync(db)
-    real = ghmod.GitHub.set_secret
-    ghmod.GitHub.set_secret = lambda self, n, v: (_ for _ in ()).throw(ghmod.GitHubError("network down"))
+    real = ghmod.GitHub.enable_pages              # fail late: after the encrypted data branch exists
+    ghmod.GitHub.enable_pages = lambda self: (_ for _ in ()).throw(ghmod.GitHubError("network down"))
     try:
         with pytest.raises(ghmod.GitHubError):
             s.publish("me", "job-board", "tok-123456", "orbit tulip canyon ember velvet", api=api)
     finally:
-        ghmod.GitHub.set_secret = real
+        ghmod.GitHub.enable_pages = real
+    assert "keys.json" in fg.BRANCHES["data"]
     pub = s.public()
     assert not pub["enabled"] and pub["token_hint"] == "••••3456" and pub["has_key"]    # remembered despite failure
     s.publish("me", "job-board", "", "", api=api)                                        # retry: nothing typed
     assert s.public()["enabled"] and "JOBBOARD_DATA_KEY" in fg.SECRETS
+
+
+def test_workflow_references_secrets_explicitly():
+    """GitHub flags workflows that dump every secret (toJSON(secrets)) as possibly malicious."""
+    wf = (Path(__file__).parents[1] / ".github" / "workflows" / "daily.yml").read_text()
+    assert "toJSON(secrets)" not in wf
+    assert all(f"secrets.KAGGLE_KEY_{n} }}}}" in wf for n in range(1, 6))
+
+
+def test_kaggle_slots():
+    from app.sync import assign_slots
+    a = assign_slots([{"username": "x", "slot": 2}, {"username": "y"}, {"username": "z"}])
+    assert [r["slot"] for r in a] == [2, 1, 3]
+    with pytest.raises(ValueError):
+        assign_slots([{"username": str(i)} for i in range(6)])

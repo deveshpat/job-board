@@ -24,7 +24,8 @@ DESC_CHARS = 6000
 
 def export_user(db: DB) -> Dict[str, Any]:
     apps = [{k: a[k] for k in ("uid", "job_id", *APP_FIELDS, "created_at", "updated_at")} for a in db.applications()]
-    accounts = [{"username": a["username"], "enabled": a.get("enabled", True)} for a in db.get("kaggle_accounts", [])]
+    accounts = [{"username": a["username"], "enabled": a.get("enabled", True), "slot": a.get("slot"),
+                 "key_set": bool(a.get("key") or a.get("key_set"))} for a in db.get("kaggle_accounts", [])]
     return {
         "schema": 1, "exported_at": now(), "meta": db.get("user_meta", {}),
         "profile": db.get("profile"), "settings": db.get("settings", {}),
@@ -34,7 +35,9 @@ def export_user(db: DB) -> Dict[str, Any]:
 
 
 def _newer(a: Dict, b: Dict, part: str) -> Dict:
-    return a if a.get("meta", {}).get(part, "") >= b.get("meta", {}).get(part, "") else b
+    """a = this device, b = the repo. On an exact tie the repo wins, so devices converge instead of
+    taking turns overwriting each other."""
+    return a if a.get("meta", {}).get(part, "") > b.get("meta", {}).get(part, "") else b
 
 
 def merge_user(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,13 +80,16 @@ def apply_user(db: DB, user: Dict[str, Any]) -> None:
     db.put("decisions", user.get("decisions", {}))
     db.put("deleted_apps", user.get("deleted_apps", {}))
     db.put("user_meta", user.get("meta", {}))
-    enabled = {k["username"]: k.get("enabled", True) for k in user.get("kaggle") or []}
-    accts = db.get("kaggle_accounts", [])
+    remote = {k["username"]: k for k in user.get("kaggle") or []}
+    accts = [a for a in db.get("kaggle_accounts", []) if a["username"] in remote or not user.get("kaggle")]
     known = {a["username"] for a in accts}
     for a in accts:
-        if a["username"] in enabled:
-            a["enabled"] = enabled[a["username"]]
-    accts += [{"username": u, "enabled": e} for u, e in enabled.items() if u not in known]
+        if a["username"] in remote:
+            r = remote[a["username"]]
+            a.update(enabled=r.get("enabled", True), slot=r.get("slot") or a.get("slot"),
+                     key_set=r.get("key_set", False) or bool(a.get("key")))
+    accts += [{"username": u, "enabled": r.get("enabled", True), "slot": r.get("slot"), "key_set": r.get("key_set", False)}
+              for u, r in remote.items() if u not in known]
     db.put("kaggle_accounts", accts)
     # Tracker: upsert by uid, drop tombstoned rows.
     mine = {a["uid"]: a for a in db.applications()}
