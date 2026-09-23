@@ -214,6 +214,9 @@ class FakeKaggle:
             FakeKaggle.spec = _json.loads((Path(args[args.index("-p") + 1]) / "spec.json").read_text())
             return CLI_Result(0, "Dataset version is being created")
         if args[:2] == ("datasets", "status"):
+            if how == "fresh" and FakeKaggle.calls.count((self.username, args[:2])) < 3:   # brand-new dataset
+                return CLI_Result(1, "403 Client Error: Forbidden for url: https://api.kaggle.com/v1/"
+                                     "datasets.DatasetApiService/GetDatasetStatus")
             return CLI_Result(0, "ready")
         if args[:2] == ("kernels", "push"):
             meta = _json.loads((Path(args[args.index("-p") + 1]) / "kernel-metadata.json").read_text())
@@ -264,6 +267,15 @@ def test_kaggle_rotation_and_fallback(tmp_path, monkeypatch):
     b = kg.Accounts(db).get("acct_b")
     assert b["gpu_blocked_until"] > datetime.now(timezone.utc).isoformat() and "quota" in b["quota_message"]
     assert db.status_counts().get("new", 0) + db.status_counts().get("filtered", 0) == stats["evaluated"]
+
+    # 1b. an account's first run: its new dataset answers 403 for a moment — wait, don't skip the account.
+    FakeKaggle.behaviour, FakeKaggle.calls = {"acct_a": "fresh"}, []
+    kg.Accounts(db).update("acct_b", gpu_blocked_until=None)
+    FakeKaggle.behaviour["acct_b"] = "quota"
+    db.conn.execute("DELETE FROM jobs"); db.conn.commit()
+    stats = p.run()
+    assert stats["engine"] == "kaggle" and FakeKaggle.last_gpu
+    assert [u for u, a in FakeKaggle.calls if a == ("kernels", "push")][-1] == "acct_a"
 
     # 2. every GPU exhausted → Kaggle CPU.
     FakeKaggle.behaviour = {"acct_a": "quota", "acct_b": "quota"}

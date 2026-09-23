@@ -253,11 +253,14 @@ class KaggleRunner:
              if exists else cli.run("datasets", "create", "-p", str(folder), "-q", timeout=900))
         if r.code:
             raise KaggleError(f"dataset upload: {r.out[-400:]}")
+        denied = 0
         for _ in range(60):                      # Kaggle processes a new version before kernels can read it
             s = cli.run("datasets", "status", f"{user}/{DATASET_SLUG}").out.lower()
             if "ready" in s:
                 return
-            if "error" in s:
+            if "client error" in s and denied < 6:   # a just-created dataset answers 403/404 for a few seconds
+                denied += 1                          # (an account's first run failed on this)
+            elif "error" in s:
                 raise KaggleError(f"dataset processing: {s[-300:]}")
             self.sleep(10)
         raise KaggleError("dataset was not ready after 10 minutes")
