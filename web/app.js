@@ -134,7 +134,7 @@ function drawList() {
   area.innerHTML = `<div class="list">${deck.jobs.map((j) => `
     <div class="card-box row-job">
       ${ring(j.card)}
-      <div class="grow"><div class="t">${esc(j.title)}</div><div class="muted" style="font-size:13px">${esc(j.company)} · ${esc(j.location || "")}</div></div>
+      <div class="grow"><div class="t">${esc(j.title)}</div><div class="muted" style="font-size:13px">${esc(j.company)} · ${esc(j.location || "")}${j.card?.pay ? ` · <b>ask ${esc(j.card.pay.ask)}</b>` : ""}</div></div>
       <a class="btn small" href="${esc(j.url)}" target="_blank" rel="noopener">Open ${ICON.ext.replace("<svg", '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"')}</a>
       <button class="btn small" data-undo="${j.id}">Back to review</button>
     </div>`).join("")}</div>`;
@@ -255,6 +255,11 @@ document.addEventListener("toggle", (e) => {
   try { localStorage.setItem("gut-open", e.target.open ? "1" : "0"); } catch (_) { /* storage off */ }
 }, true);
 
+// What to ask for: from the posting's own range when it has one, otherwise a clearly-labelled estimate.
+const payLine = (p) => !p ? "" : `<div class="pay-line" title="${esc(p.basis)}"><span class="pay-ico" aria-hidden="true">💰</span>
+  <span>Ask for <b>${esc(p.ask)}</b>${p.period === "month" ? "" : "/yr"}</span>
+  <span class="faint">· ${p.listed ? `they list ${esc(p.range)}${p.abroad ? " (may be for their own country)" : ""}` : `estimate ${esc(p.range)} — ${esc(p.basis)}`}</span></div>`;
+
 function cardHTML(j) {
   const c = j.card || {};
   const logo = j.logo ? `<img src="${esc(j.logo)}" alt="" onerror="this.remove()">` : "";
@@ -278,7 +283,8 @@ function cardHTML(j) {
         <div><div class="verdict">${esc(tk?.verdict || tierLabel)}${c.unsure ? ' <span class="chip warn" title="The read on this one was split — double-check it">Unsure</span>' : ""}</div>
         <div class="sub">${tk ? `${tierLabel}${tk.summary.includes("—") ? " · " + esc(tk.summary.split("—")[1].replace(/\.$/, "").trim()) : ""}` : c.scored_by === "jev" ? `Scored${conf}` : "Keyword score (no engine)"}</div></div>
       </div>
-      <div class="chips">${(c.chips || []).map((x, i) => `<span class="chip ${i === 0 ? (c.location_ok ? "good" : "warn") : ""}">${esc(x)}</span>`).join("")}${j.salary ? `<span class="chip info">${esc(j.salary)}</span>` : ""}</div>
+      <div class="chips">${(c.chips || []).map((x, i) => `<span class="chip ${i === 0 ? (c.location_ok ? "good" : "warn") : ""}">${esc(x)}</span>`).join("")}${j.salary && !c.pay ? `<span class="chip info">${esc(j.salary)}</span>` : ""}</div>
+      ${payLine(c.pay)}
       ${tk ? `<details class="gut"${gutOpen() ? " open" : ""}>
         <summary><span class="gut-ico" aria-hidden="true">⚡</span><span class="gut-t">Gut check</span>
           <span class="gut-n">${tk.pros.length ? `<b class="p">✓ ${tk.pros.length}</b>` : ""}${tk.cons.length ? `<b class="c">! ${tk.cons.length}</b>` : ""}</span></summary>

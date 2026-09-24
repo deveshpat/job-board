@@ -695,3 +695,18 @@ def test_posting_language_gate():
     assert "Posting is in German" in card["gates"] and "In German" in card["chips"] and "German" in card["take"]["cons"][0]
     card = pl.score_answers(ans, {**profile, "languages": ["English", "German"]}, [], [], 0, job)
     assert not any("German" in g for g in card["gates"])
+
+
+def test_pay_suggestion():
+    from app.pay import parse_listed, suggest
+    assert parse_listed("Remote | $150 - 210K USD + equity") == {"currency": "USD", "low": 150000.0, "high": 210000.0, "period": "year"}
+    assert parse_listed("CTC: 8-12 LPA")["low"] == 800000 and parse_listed("Stipend ₹30,000/month")["period"] == "month"
+    assert parse_listed("Salary: €60.000 – €75.000 per year")["high"] == 75000
+    assert parse_listed("3+ years of experience in a 10 person team") is None
+    assert parse_listed("We've raised $781M in funding and our last valuation was $11B") is None
+    assert parse_listed("Backed by YC, $40M Series B") is None
+    p = suggest({"salary": "$150 - 210K"}, "mid", "entry", "foreign")
+    assert p["listed"] and p["ask"] == "$168k" and p["range"] == "$150–210k"          # above your level: lower in the range
+    p = suggest({"location": "Remote, Spain"}, "mid", "entry", "foreign")
+    assert not p["listed"] and p["ask"].startswith("€") and "estimate" not in p["ask"]
+    assert suggest({"location": "Bengaluru"}, "entry", "entry", "india")["ask"] == "₹12 LPA"

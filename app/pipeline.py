@@ -18,6 +18,7 @@ from .db import DB, now
 from .jev import Jev, JevError
 from .kaggle import KAGGLE_KEV_RUN, KEV_COMMIT, KaggleError, KaggleRunner
 from .lang import detect as detect_language
+from .pay import suggest as suggest_pay
 from .profile import compact_candidate, default_languages
 from .sources import DEFAULT_COMPANIES, SOURCES, fetch_all
 from .urls import norm_url as _norm_url
@@ -178,8 +179,10 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
     return {
         "match": round(match), "tier": tier, "confidence": round(confidence, 3),
         "unsure": confidence < Q.LOW_CONFIDENCE,
-        "chips": [c for c in chips if c],
+        "chips": list(dict.fromkeys(c for c in chips if c)),          # "Internship" can be both level and job type
         "location_ok": loc_choice in ("remote_open", "local_office") and listed != "elsewhere",
+        "pay": suggest_pay(job, a["level"]["choice"], cand_level,
+                           "india" if listed == "yours" or loc_choice == "local_office" else "foreign") if job else None,
         "skills_matched": matched, "skills_gap": missing,
         "lead_project": None if lead in (None, "none") else lead,
         "take": kev_take(a, comp, cand_level, loc_choice, loc_label, matched, missing, confidence,

@@ -595,3 +595,6 @@ details.gut .evidence { margin-bottom: 14px; }
 .rz-srow > .rz-b { align-self: start; }
 .rz-l1l { position: relative; }
 .rz-b[data-act="elink"] { position: absolute; left: -26px; top: 0; margin: 0; }
+.pay-line { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-top: 10px; font-size: 13.5px; }
+.pay-line b { font-variant-numeric: tabular-nums; }
+.pay-line .faint { font-size: 12.5px; }
