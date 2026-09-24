@@ -618,3 +618,10 @@ def test_real_latex_compile():
     with pytest.raises(rs.CompileError) as e:
         rs.compile_tex(bad)
     assert "Undefined control sequence" in str(e.value) and "line" in str(e.value)
+
+
+def test_workflows_are_valid_yaml():
+    import yaml
+    for wf in (Path(__file__).parents[1] / ".github" / "workflows").glob("*.yml"):
+        doc = yaml.safe_load(wf.read_text())
+        assert doc.get("jobs") and (doc.get("on") or doc.get(True)), wf.name     # YAML reads `on:` as True

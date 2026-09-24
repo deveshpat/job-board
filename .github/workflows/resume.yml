@@ -20,7 +20,9 @@ jobs:
         with: { python-version: "3.12", cache: pip }
       - run: pip install -q -r requirements.txt
       - uses: actions/cache@v4
-        with: { path: ~/.TinyTeX, key: tinytex-${{ runner.os }}-v1 }
+        with:
+          path: ~/.TinyTeX
+          key: tinytex-${{ runner.os }}-v1
       - name: Install LaTeX (TinyTeX, cached between runs)
         run: |
           if ! ls ~/.TinyTeX/bin/*/pdflatex >/dev/null 2>&1; then
