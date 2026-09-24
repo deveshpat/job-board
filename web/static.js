@@ -3,8 +3,9 @@
    answers those calls from your decrypted data:
 
      keys.json   (public)   your data key, wrapped by passphrase / passkeys          ← web/vault.js
-     user.enc    (yours)    profile, settings, swipes, tracker — written by your devices
+     user.enc    (yours)    profile, settings, swipes, tracker, resume source, photo — written by your devices
      board.enc   (Action)   the jobs the scheduled run found — read-only here
+     resume_pdf.enc         your resume PDF (the Mac app or the "Build resume" Action compiles LaTeX)
 
    Everything is cached in IndexedDB (encrypted) so the app opens offline; changes to user.enc are pushed
    to the repo's `data` branch with the GitHub API, merging with other devices record by record. */
@@ -81,10 +82,11 @@
       if (!r.ok) throw new Error(`GitHub ${r.status} saving ${path}: ${(await r.text()).slice(0, 200)}`);
       return (await r.json()).content.sha;
     },
-    async dispatch() {
-      const r = await fetch(GH.url("/actions/workflows/daily.yml/dispatches"), { method: "POST", headers: GH.headers(),
-        body: JSON.stringify({ ref: "main", inputs: { force: true } }) });
-      if (!r.ok) throw new Error(`Couldn't start the run (GitHub ${r.status}) — does your token have Actions: write?`);
+    async dispatch(workflow = "daily.yml") {
+      const body = workflow === "daily.yml" ? { ref: "main", inputs: { force: true } } : { ref: "main" };
+      const r = await fetch(GH.url(`/actions/workflows/${workflow}/dispatches`), { method: "POST", headers: GH.headers(), body: JSON.stringify(body) });
+      if (r.status === 404 && workflow !== "daily.yml") throw new Error("This repo doesn't have the resume builder yet — press “Update app on GitHub” in the Mac app once.");
+      if (!r.ok) throw new Error(`Couldn't start the ${workflow === "daily.yml" ? "run" : "build"} (GitHub ${r.status}) — does your token have Actions: write?`);
     },
     async latestRun() {
       const r = await fetch(GH.url("/actions/workflows/daily.yml/runs?per_page=5"), { headers: GH.headers() });
@@ -114,7 +116,7 @@
     if (!a) return b;
     if (!b) return a;
     const out = { schema: 1, exported_at: nowIso(), meta: {} };
-    for (const part of ["profile", "settings", "kaggle"]) {
+    for (const part of ["profile", "settings", "kaggle", "resume", "photo"]) {
       const src = (a.meta?.[part] || "") > (b.meta?.[part] || "") ? a : b;   // tie → remote (b) wins, like app/state.py
       out[part] = src[part];
       out.meta[part] = src.meta?.[part] || "";
@@ -203,6 +205,49 @@
     } catch (_) { return { company: null, source: "manual" }; }
   }
 
+  // -- resume: source in user.enc, PDF in resume_pdf.enc -------------------------------------------------
+  async function revOf(data) {                    // same as app/resume.py rev_of: sha1 hex, first 12
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    return [...new Uint8Array(await crypto.subtle.digest("SHA-1", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 12);
+  }
+  async function loadPdf(force) {                 // → S.pdf = {rev, bytes, error}
+    const want = S.user.resume?.rev;
+    if (!want) return null;
+    if (!force && S.pdf && (S.pdf.rev === want || Date.now() - S.pdfAt < 10000)) return S.pdf;
+    S.pdfAt = Date.now();
+    let text = null;
+    try { text = (await GH.file("resume_pdf.enc"))?.text; await idb.set("resume_pdf.enc", text); }
+    catch (_) { text = await idb.get("resume_pdf.enc"); }   // offline: the cached copy
+    if (!text) return (S.pdf = null);
+    const b = await Vault.decryptBlob(S.key, "resume_pdf", text);
+    const fresh = b.rev === want && S.pdf?.rev !== want;
+    S.pdf = { rev: b.rev, error: b.error, bytes: b.pdf ? Vault.unb64(b.pdf) : null };
+    if (fresh && S.token) { await push(); await loadRemote().catch(() => {}); }   // the build also refreshed your profile
+    return S.pdf;
+  }
+  function resumeMeta() {
+    const r = S.user.resume;
+    if (!r) return null;
+    const { tex, ...meta } = r;
+    const err = S.pdf?.error && S.pdf.error.rev === r.rev ? S.pdf.error : r.error || null;
+    return { ...meta, pdf_rev: S.pdf?.rev || null, pdf_current: S.pdf?.rev === r.rev, error: err, latex: false };
+  }
+  async function buildResume() {
+    await push();                                   // the Action reads user.enc from the repo
+    if (!S.token) httpError("Add your GitHub token (Settings → Sync) so GitHub can build the PDF.");
+    await GH.dispatch("resume.yml");
+  }
+  async function saveResumeTex(tex, filename) {
+    S.user.resume = { ...(S.user.resume || {}), kind: "tex", tex, rev: await revOf(tex), error: null,
+                      filename: filename || S.user.resume?.filename || "resume.tex", updated_at: nowIso() };
+    changed("resume");
+    await buildResume();
+    return resumeMeta();
+  }
+  const EDITABLE = ["name", "headline", "location", "email", "goal", "level", "country"];   // app/profile.py
+  const profileOut = () => S.user.profile ? { ...S.user.profile, ...(S.board?.labels || {}), photo_url: S.user.photo || null,
+    resume: resumeMeta(), kev_behind: !!S.user.resume && S.user.profile.kev_rev !== S.user.resume.rev, job: { running: false } } : null;
+
   // -- the /api emulation ------------------------------------------------------------------------------
   const APP_FIELDS = ["company", "role", "url", "location", "source", "applied_on", "status", "next_step", "follow_up", "notes", "match"];
   const statusOf = (j) => S.user.decisions?.[j.id]?.status || j.status;
@@ -236,21 +281,52 @@
       if (S.wasRunning && !running) await loadRemote().catch(() => {});   // a run just finished: fetch its board
       S.wasRunning = running;
       return {
-        jev: { available: true, engine: "Kev-4B on Kaggle", local: false, engine_state: null, model: "kev-4b" },
+        jev: { available: true, engine: "Kev-4B", local: false, engine_state: null, model: "kev-4b" },
         counts: counts(), has_profile: !!S.user.profile, static: true, token: !!S.token,
         pipeline: { running, stage: running ? `GitHub Actions: ${run.status.replace("_", " ")}` : "idle", done: 0, total: 0,
                     log: S.board?.last_log || [], error: null },
         last_run: S.board?.last_run ? { ...S.board.last_run, stats: typeof S.board.last_run.stats === "string" ? JSON.parse(S.board.last_run.stats) : S.board.last_run.stats } : null,
       };
     }
-    if (p === "/api/profile" && method === "GET")
-      return S.user.profile ? { ...S.user.profile, ...(S.board?.labels || {}) } : null;
-    if (p === "/api/profile" && method === "PATCH") {
-      S.user.profile = { ...S.user.profile, ...body };
-      changed("profile");
-      return { ...S.user.profile, ...(S.board?.labels || {}) };
+    if (p === "/api/profile" && method === "GET") {
+      if (S.user.resume && S.pdf?.rev !== S.user.resume.rev) await loadPdf().catch(() => {});
+      return profileOut();
     }
-    if (p === "/api/profile/build") httpError("Rebuilding the profile needs Kev — use the Mac app for that (it syncs here).");
+    if (p === "/api/profile" && method === "PATCH") {
+      const overrides = { ...(S.user.profile.overrides || {}) };
+      for (const k of EDITABLE) if (k in body) overrides[k] = body[k];
+      S.user.profile = { ...S.user.profile, ...body, overrides };
+      changed("profile");
+      return profileOut();
+    }
+    if (p === "/api/profile/build") httpError(`Kev re-reads your resume in the Mac app (it syncs here). The basics update on GitHub right after you save.`);
+    if (p === "/api/resume" && method === "GET") {
+      if (!S.user.resume) httpError("No resume yet");
+      return { ...S.user.resume, ...resumeMeta() };
+    }
+    if (p === "/api/resume" && method === "PUT") {
+      if (!/\\begin\{document\}/.test(body.tex || "")) httpError("That doesn't look like a LaTeX document (no \\begin{document})");
+      return saveResumeTex(body.tex, body.filename);
+    }
+    if (p === "/api/resume/upload") {
+      const name = q.get("filename") || "resume.pdf", file = opts.body;
+      if (/\.tex$/i.test(name)) return saveResumeTex(await file.text(), name);
+      if (!/\.pdf$/i.test(name)) httpError("Upload your resume as .tex (editable here) or .pdf");
+      if (!S.token) httpError("Add your GitHub token (Settings → Sync) first — the PDF is stored in your repo, encrypted.");
+      const bytes = new Uint8Array(await file.arrayBuffer()), rev = await revOf(bytes);
+      const f = await GH.file("resume_pdf.enc").catch(() => null);
+      await GH.put("resume_pdf.enc", await Vault.encryptBlob(S.key, "resume_pdf", { rev, pdf: Vault.b64(bytes), error: null }), f?.sha, "resume PDF");
+      S.pdf = { rev, bytes, error: null };
+      S.user.resume = { kind: "pdf", tex: null, rev, filename: name, error: null, updated_at: nowIso() };
+      changed("resume");
+      await buildResume().catch((e) => console.warn(e));   // refreshes the profile from the new PDF
+      return resumeMeta();
+    }
+    if (p === "/api/photo" && method === "PUT") {
+      S.user.photo = body.data_url;
+      changed("photo");
+      return { ok: true };
+    }
     if (p === "/api/settings" && method === "GET") return settings();
     if (p === "/api/settings" && method === "PATCH") {
       S.user.settings = { ...(S.user.settings || {}), ...body, tz_offset_min: -new Date().getTimezoneOffset() };
@@ -417,7 +493,7 @@
 
   function renderUnlock(keys, start) {
     const hasPasskey = keys?.wraps?.some((w) => w.kind === "passkey");
-    document.querySelector(".tabs").style.visibility = "hidden";
+    document.querySelectorAll(".tabs, .top-right").forEach((el) => (el.style.visibility = "hidden"));
     const view = document.getElementById("view");
     view.innerHTML = `
       <div class="card-box unlock">
@@ -447,7 +523,7 @@
       if (!key) return msg("That passphrase didn't unlock anything.");
       msg("Unlocked — loading your data…");
       try { await unlocked(key, remember); } catch (e) { return msg(e.message); }
-      document.querySelector(".tabs").style.visibility = "";
+      document.querySelectorAll(".tabs, .top-right").forEach((el) => (el.style.visibility = ""));
       start();
     };
     document.getElementById("u-form").onsubmit = async (e) => {
@@ -516,6 +592,11 @@
     changed();
   }
 
-  window.Static = { boot, api, setToken, addPasskey, lock, backup, restore, csv,
+  async function resumePdf() {
+    const pdf = await loadPdf();
+    return pdf?.bytes ? pdf : null;
+  }
+
+  window.Static = { boot, api, setToken, addPasskey, lock, backup, restore, csv, resumePdf,
                     state: () => ({ token: !!S.token, dirty: S.dirty, repo: S.cfg, passkeys: Vault.passkeysSupported() }) };
 })();

@@ -524,3 +524,97 @@ def test_kaggle_kernel_failure_does_not_burn_other_accounts(tmp_path, monkeypatc
         runner.run({"triage": {"batches": []}, "jobs": {}, "select": {"max_deep": 1}, "candidate": {}, "eval_questions": {}})
     assert e.value.run
     assert [u for u, a in FakeKaggle.calls if a == ("kernels", "push")] == ["a1"]        # stopped after one account
+
+
+def test_resume_store_and_profile_overrides(tmp_path, monkeypatch):
+    """Resume source → PDF → profile; your edits survive a re-read; a LaTeX error keeps the old PDF."""
+    from app import resume as rs
+    from app.profile import carry_overrides, refresh_profile
+    db = DB(tmp_path / "db.sqlite")
+    fake_pdf = lambda tex: b"%PDF-1.4 " + tex[-40:].encode()
+    monkeypatch.setattr(rs, "compile_tex", fake_pdf)
+    store = rs.ResumeStore(db)
+    src = tmp_path / "Me.tex"
+    src.write_text(RESUME.read_text())
+    res = store.import_file(src)
+    assert res["kind"] == "tex" and res["source_path"] == str(src) and db.get("user_meta")["resume"]
+    tex2 = res["tex"].replace(r"\section*{Skills}", r"\section*{Skills} % edited")
+    store.save_tex(tex2)
+    assert store.pdf_rev == rs.rev_of(tex2) and src.read_text() == tex2              # compiled + written back
+    assert src.with_suffix(".pdf").read_bytes() == store.pdf()
+    assert list((store.folder / "versions").iterdir())                               # the old source is kept
+
+    def broken(tex):
+        raise rs.CompileError("Undefined control sequence (line 3)")
+    monkeypatch.setattr(rs, "compile_tex", broken)
+    good = store.pdf_rev
+    store.save_tex(tex2 + "\n% more")
+    assert store.pdf_rev == good and store.get()["error"]["message"].startswith("Undefined")
+
+    # Kev's picks change, your edits stay: overrides, switched chips, added roles.
+    path, rev = store.text_source()
+    p1 = build_profile(path, None)
+    p1["overrides"] = {"location": "Rishikesh"}
+    p1["search_terms"][0].update(keep=False, user_set=True)
+    p1["search_terms"].insert(0, {"name": "Prompt Wrangler", "p": None, "keep": True, "added": True, "user_set": True})
+    p2 = carry_overrides(p1, build_profile(path, None))
+    assert p2["location"] == "Rishikesh" and p2["search_terms"][0]["name"] == "Prompt Wrangler"
+    first = p1["search_terms"][1]["name"]
+    assert next(t for t in p2["search_terms"] if t["name"] == first)["keep"] is False
+    p3 = refresh_profile({**p2, "scored_by": "jev", "level": "mid"}, path, rev)
+    assert p3["level"] == "mid" and p3["resume_rev"] == rev and p3["location"] == "Rishikesh"
+
+
+def test_kev_take_is_short_and_plain(fake_jev, tmp_path):
+    jev = Jev(api_key="test-key", cache_path=tmp_path / "cache.db")
+    profile = build_profile(RESUME, jev)
+    skills = [k["name"] for k in profile["keywords"] if k["keep"]]
+    gaps = pl.gap_vocab(skills)
+    job = _jobs()[1]
+    from app.profile import compact_candidate
+    cand = compact_candidate(profile)
+    ans = jev.ask({"candidate": cand, "job": pl.job_state(job)}, pl.Q.evaluate_questions(cand, gaps))
+    card = pl.score_answers(ans, profile, skills, gaps, 0)
+    t = card["take"]
+    assert t["verdict"] in ("Worth applying", "Worth a look", "Long shot") and t["summary"].startswith(t["verdict"])
+    assert len(t["pros"]) <= 4 and len(t["cons"]) <= 3
+    assert not any("%" in x or "/4" in x for x in t["pros"] + t["cons"])            # no probabilities or rubric scores
+
+
+def test_build_resume_action(tmp_path, monkeypatch):
+    """The GitHub Action path: web edit in user.enc → resume_pdf.enc + a quick profile refresh."""
+    import importlib.util
+    from app import resume as rs, state, vault
+    spec = importlib.util.spec_from_file_location("br", Path(__file__).parents[1] / "scripts" / "build_resume.py")
+    br = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(br)
+    key = vault.new_data_key()
+    monkeypatch.setenv("JOBBOARD_DATA_KEY", vault.b64(key))
+    dev = DB(tmp_path / "dev.sqlite")
+    prof = build_profile(RESUME, None)
+    prof.update(scored_by="jev", level="mid", kev_rev="old", resume_rev="old")
+    dev.put("profile", prof); dev.touch("profile")
+    tex = RESUME.read_text().replace("Python Developer", "Pythonista", 1)
+    dev.put("resume", {"kind": "tex", "tex": tex, "rev": rs.rev_of(tex), "filename": "r.tex"}); dev.touch("resume")
+    st = tmp_path / "state"; st.mkdir()
+    (st / "user.enc").write_bytes(vault.encrypt(key, "user", state.export_user(dev)))
+    assert br.main(["--state", str(st)], compile_fn=lambda t: b"%PDF fake") == 0
+    built = vault.decrypt(key, "resume_pdf", (st / "resume_pdf.enc").read_bytes())
+    user = vault.decrypt(key, "user", (st / "user.enc").read_bytes())
+    assert built["rev"] == rs.rev_of(tex) and vault.unb64(built["pdf"]) == b"%PDF fake"
+    p = user["profile"]
+    assert "Pythonista" in p["headline"] and p["level"] == "mid" and p["kev_rev"] == "old" and p["resume_rev"] == rs.rev_of(tex)
+    # merging it back on a device picks up the refresh (newer profile) and keeps the resume
+    merged = state.merge_user(state.export_user(dev), user)
+    assert merged["profile"]["resume_rev"] == rs.rev_of(tex) and merged["resume"]["tex"] == tex
+
+
+def test_real_latex_compile():
+    from app import resume as rs
+    if not rs.pdflatex():
+        pytest.skip("no LaTeX on this machine")
+    assert rs.compile_tex(RESUME.read_text()).startswith(b"%PDF")
+    bad = RESUME.read_text().replace(r"\section*{Skills}", "\\section*{Skills}\n\\nosuchcommand", 1)
+    with pytest.raises(rs.CompileError) as e:
+        rs.compile_tex(bad)
+    assert "Undefined control sequence" in str(e.value) and "line" in str(e.value)

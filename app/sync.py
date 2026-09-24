@@ -46,6 +46,8 @@ class Sync:
     def __init__(self, db: DB, log: Callable[[str], None] = print):
         self.db, self.log = db, log
         self._lock = threading.Lock()
+        self.resumes = None                         # app.resume.ResumeStore (set by main.py)
+        self.on_resume_changed: Callable[[], None] = lambda: None
 
     @property
     def cfg(self) -> dict:
@@ -184,9 +186,14 @@ class Sync:
         with self._lock:
             try:
                 gh, key = self.gh(), self.key()
+                before = (self.db.get("resume") or {}).get("rev")
                 changed = self._sync_user(gh, key)
+                if (self.db.get("resume") or {}).get("rev") != before:
+                    self.on_resume_changed()             # edited on another device: compile + Kev re-reads it
+                self._sync_resume_pdf(gh, key)
                 pulled = self._pull_pipeline(gh, key)
                 self._sync_token(gh, key)
+                self._check_pages()
                 self.db.put("github", {**self.cfg, "last_sync": now(), "last_error": None})
                 return {"ok": True, "pushed": changed, "pulled_jobs": pulled}
             except Exception as e:
@@ -226,6 +233,36 @@ class Sync:
         mine["saved_at"] = mine["saved_at"] or now()
         gh.put("token.enc", vault.encrypt(key, "token", mine), f[0] if f else None, "encrypted sync token")
         self.db.put("github", {**self.cfg, "token_saved_at": mine["saved_at"]})
+
+    def _check_pages(self) -> None:
+        """Clear the "turn on Pages" reminder once the web app actually answers."""
+        c = self.cfg
+        if not c.get("pages_manual") or c.get("api", API) != API:
+            return
+        try:
+            import requests
+            if requests.get(f"https://{c['owner']}.github.io/{c['repo']}/", timeout=10).ok:
+                self.db.put("github", {**c, "pages_manual": False})
+        except Exception:
+            pass
+
+    def _sync_resume_pdf(self, gh: GitHub, key: bytes) -> None:
+        """resume_pdf.enc holds the PDF for the current resume rev: fetch it if another device or the resume
+        Action built it, upload ours if we built it first."""
+        store, res = self.resumes, self.db.get("resume")
+        if not store or not res or not res.get("rev"):
+            return
+        f = gh.file("resume_pdf.enc")
+        remote = vault.decrypt(key, "resume_pdf", f[1]) if f else None
+        if remote and remote.get("rev") == res["rev"] and remote.get("pdf") and store.pdf_rev != res["rev"]:
+            store.set_pdf(vault.unb64(remote["pdf"]), res["rev"])
+        elif store.pdf_rev == res["rev"] and (not remote or remote.get("rev") != res["rev"]):
+            blob = {"rev": res["rev"], "pdf": vault.b64(store.pdf()), "error": None}
+            try:
+                gh.put("resume_pdf.enc", vault.encrypt(key, "resume_pdf", blob), f[0] if f else None, "resume PDF")
+            except GitHubError as e:
+                if not getattr(e, "conflict", False):
+                    raise
 
     def _pull_pipeline(self, gh: GitHub, key: bytes) -> int:
         f = gh.file("pipeline.enc")

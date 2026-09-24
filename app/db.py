@@ -59,6 +59,7 @@ class DB:
     def __init__(self, path: Path = DB_PATH, backup_csv: Optional[Path] = None):
         """backup_csv: if set, the tracker is rewritten there as CSV after every change to it."""
         self.backup_csv = backup_csv
+        self.path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row

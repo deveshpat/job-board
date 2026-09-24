@@ -1,0 +1,45 @@
+# Compiles your resume when you edit or upload it in the web app (which can't run LaTeX itself).
+# Started by the web app; the PDF lands (encrypted) in resume_pdf.enc on the data branch.
+name: Build resume
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: jobboard-resume
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: data, path: state, fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -q -r requirements.txt
+      - uses: actions/cache@v4
+        with: { path: ~/.TinyTeX, key: tinytex-${{ runner.os }}-v1 }
+      - name: Install LaTeX (TinyTeX, cached between runs)
+        run: |
+          if ! ls ~/.TinyTeX/bin/*/pdflatex >/dev/null 2>&1; then
+            curl -fsSL https://yihui.org/tinytex/install-bin-unix.sh | sh
+          fi
+          ~/.TinyTeX/bin/*/tlmgr install titlesec enumitem fontawesome5 cm-super xcolor hyperref tools graphics geometry > /dev/null
+      - name: Compile and save
+        env:
+          JOBBOARD_DATA_KEY: ${{ secrets.JOBBOARD_DATA_KEY }}
+        run: |
+          git -C state config user.name "jobboard-bot"
+          git -C state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            python scripts/build_resume.py --state state || exit 1
+            git -C state add -A
+            git -C state diff --cached --quiet && exit 0
+            git -C state commit -q -m "resume build $(date -u +%FT%TZ)"
+            git -C state push -q && exit 0
+            # a device saved user.enc meanwhile: start again from the newest copy
+            git -C state fetch -q origin data && git -C state reset -q --hard origin/data
+          done
+          exit 1

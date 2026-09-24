@@ -1,7 +1,9 @@
 """The three encrypted state files that live on the repo's `data` branch, and how they merge.
 
   user.enc      written by your devices (web app, Mac app): profile, settings, swipe decisions,
-                tracker rows (+ deletion tombstones), which Kaggle accounts are enabled
+                tracker rows (+ deletion tombstones), which Kaggle accounts are enabled, your resume
+                source and photo. The resume Action also writes it (a quick profile refresh), merging the same way.
+  resume_pdf.enc  the compiled resume PDF for the current resume rev (Mac app or the resume Action)
   pipeline.enc  written only by the scheduled GitHub Action: what it has already seen, jobs waiting
                 for evaluation, stored answers (for re-scoring), Kaggle GPU usage per account
   board.enc     written only by the Action: what the web app shows
@@ -31,7 +33,13 @@ def export_user(db: DB) -> Dict[str, Any]:
         "profile": db.get("profile"), "settings": db.get("settings", {}),
         "decisions": db.get("decisions", {}), "applications": apps,
         "deleted_apps": db.get("deleted_apps", {}), "kaggle": accounts,
+        "resume": _public_resume(db.get("resume")), "photo": db.get("photo"),
     }
+
+
+def _public_resume(res):
+    """The synced part of the resume record (the Mac's local file path stays local)."""
+    return {k: v for k, v in res.items() if k != "source_path"} if res else None
 
 
 def _newer(a: Dict, b: Dict, part: str) -> Dict:
@@ -47,7 +55,8 @@ def merge_user(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     if not b:
         return a
     out = {"schema": 1, "exported_at": now(), "meta": {}}
-    for part, keys in (("profile", ("profile",)), ("settings", ("settings",)), ("kaggle", ("kaggle",))):
+    for part, keys in (("profile", ("profile",)), ("settings", ("settings",)), ("kaggle", ("kaggle",)),
+                       ("resume", ("resume",)), ("photo", ("photo",))):
         src = _newer(a, b, part)
         for k in keys:
             out[k] = src.get(k)
@@ -77,6 +86,10 @@ def apply_user(db: DB, user: Dict[str, Any]) -> None:
     if user.get("profile") is not None:
         db.put("profile", user["profile"])
     db.put("settings", user.get("settings") or {})
+    if user.get("resume"):
+        db.put("resume", {**(db.get("resume") or {}), **user["resume"]})
+    if user.get("photo"):
+        db.put("photo", user["photo"])
     db.put("decisions", user.get("decisions", {}))
     db.put("deleted_apps", user.get("deleted_apps", {}))
     db.put("user_meta", user.get("meta", {}))

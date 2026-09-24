@@ -63,12 +63,16 @@ let status = null;
 const E = () => status?.jev?.engine || "Jev";  // name of the decision engine (Jev, Kev-4B, ...)
 async function refreshStatus() {
   try { status = await api("/api/status"); } catch (_) { return; }
+  // The pill only appears while something is happening (or something is wrong) — details live in Settings.
   const pill = $("#jev-pill");
-  pill.className = "jev-pill " + (status.jev.available ? "on" : "off");
-  const es = status.jev.engine_state;
-  pill.textContent = !status.jev.available ? "No engine configured"
-    : `${status.jev.engine} ● ${es === "ready" ? "loaded" : es === "loading" ? "loading…" : es === "stopping" ? "unloading…" : es === "error" ? "failed to start" : status.jev.local ? "idle (loads when needed)" : "online"}`;
-  pill.title = status.jev.local ? "Runs on this Mac. Loaded only during runs and profile builds; unloads after 5 idle minutes." : "Hosted engine";
+  const es = status.jev.engine_state, busy = status.pipeline?.running || status.profile_job?.running;
+  const text = !status.jev.available ? "No engine"
+    : busy ? (status.pipeline?.running ? "Searching…" : `${status.jev.engine} is reading…`)
+    : es === "loading" ? `${status.jev.engine} loading…` : es === "ready" ? `${status.jev.engine} ●` : es === "error" ? `${status.jev.engine} failed` : "";
+  pill.hidden = !text;
+  pill.textContent = text;
+  pill.className = "jev-pill " + (!status.jev.available || es === "error" ? "off" : "on");
+  pill.title = status.jev.local ? "Kev runs on this Mac only while it's needed, and unloads after 5 idle minutes." : "";
   document.querySelectorAll(".seg button[data-mode] b").forEach((b) => (b.textContent = status.counts[b.parentElement.dataset.mode] || 0));
   const n = status.counts.new || 0;
   const b = $("#badge-new");
@@ -78,11 +82,12 @@ async function refreshStatus() {
   a.hidden = !apps.length; a.textContent = apps.length;
 }
 
-const routes = { profile: renderProfile, applications: renderApplications, tracker: renderTracker };
+const routes = { profile: renderProfile, applications: renderApplications, tracker: renderTracker, settings: renderSettings };
 function route() {
   const name = (location.hash.replace("#/", "") || "applications").split("?")[0];
   const fn = routes[name] || renderApplications;
-  document.querySelectorAll(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === name));
+  document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("active", a.dataset.tab === name));
+  clearTimeout(profileTimer);
   cleanupDeck();
   fn();
   view.focus({ preventScroll: true });
@@ -149,6 +154,7 @@ function cardHTML(j) {
   const initial = esc((j.company || "?").trim()[0]?.toUpperCase());
   const tierLabel = { strong: "Strong match", good: "Good match", stretch: "Stretch" }[c.tier] || "Match";
   const conf = c.confidence == null ? "" : ` · confidence ${pct(c.confidence)}`;
+  const tk = c.take;
   return `
     <div class="stamp apply">APPLY</div><div class="stamp pass">PASS</div><div class="stamp later">LATER</div>
     <div class="jc-scroll">
@@ -160,14 +166,15 @@ function cardHTML(j) {
       <h2 class="jc-title">${esc(j.title)}</h2>
       <div class="jc-match">
         ${ring(c)}
-        <div><div class="verdict">${tierLabel}${c.unsure ? ' <span class="chip warn" title="The engine spread its probability across options — double-check this one">Unsure</span>' : ""}</div>
-        <div class="sub">${c.scored_by === "jev" ? `Scored by ${esc(E())}` : "Heuristic score"}${conf}</div></div>
+        <div><div class="verdict">${esc(tk?.verdict || tierLabel)}${c.unsure ? ' <span class="chip warn" title="Kev spread its answers across options — double-check this one">Unsure</span>' : ""}</div>
+        <div class="sub">${tk ? `${tierLabel} · ${esc(E())}'s take` : c.scored_by === "jev" ? `Scored by ${esc(E())}${conf}` : "Keyword score (no engine)"}</div></div>
       </div>
       <div class="chips">${(c.chips || []).map((x, i) => `<span class="chip ${i === 0 ? (c.location_ok ? "good" : "warn") : ""}">${esc(x)}</span>`).join("")}${j.salary ? `<span class="chip info">${esc(j.salary)}</span>` : ""}</div>
+      ${tk ? `<ul class="take">${tk.pros.map((x) => `<li class="pro">${esc(x)}</li>`).join("")}${tk.cons.map((x) => `<li class="con">${esc(x)}</li>`).join("")}</ul>` : ""}
       ${c.lead_project ? `<div class="jc-block lead">💡 <span>Lead your application with <b>${esc(c.lead_project)}</b></span></div>` : ""}
-      <div class="jc-block"><h4>Why it was picked</h4><ul class="reasons">${(c.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
+      ${tk ? "" : `<div class="jc-block"><h4>Why it was picked</h4><ul class="reasons">${(c.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
       ${c.skills_matched?.length ? `<div class="jc-block"><h4>Your matching skills</h4><div class="chips">${c.skills_matched.map((s) => `<span class="chip good">${esc(s)}</span>`).join("")}</div></div>` : ""}
-      ${c.skills_gap?.length ? `<div class="jc-block"><h4>Gaps they ask for</h4><div class="chips">${c.skills_gap.map((s) => `<span class="chip bad">${esc(s)}</span>`).join("")}</div></div>` : ""}
+      ${c.skills_gap?.length ? `<div class="jc-block"><h4>Gaps they ask for</h4><div class="chips">${c.skills_gap.map((s) => `<span class="chip bad">${esc(s)}</span>`).join("")}</div></div>` : ""}`}
       <div class="jc-block"><details class="desc"><summary>Full description</summary><pre>${esc(j.description || "No description provided.")}</pre></details></div>
     </div>
     <div class="jc-foot">
@@ -182,9 +189,11 @@ function drawDeck() {
     const hasProfile = status?.has_profile;
     area.innerHTML = `<div class="empty">
       <h2>${deck.mode === "later" ? "Nothing saved for later" : "You're all caught up"}</h2>
-      <p>${deck.mode === "later" ? "Swipe up on a card to save it here." : hasProfile ? "Run the pipeline to fetch and score fresh jobs." : "Start by building your profile from your resume."}</p>
-      ${deck.mode === "new" ? `<a class="btn primary" href="#/profile">${hasProfile ? "Run pipeline" : "Build profile"}</a>` : ""}
+      <p>${deck.mode === "later" ? "Swipe up on a card to save it here."
+        : hasProfile ? `${esc(E())} searches for new jobs every day. Want some now?` : "Start with your resume — it's what every job is matched against."}</p>
+      ${deck.mode === "new" ? (hasProfile ? `<button class="btn primary" id="e-run">Find jobs now</button>` : `<a class="btn primary" href="#/profile">Add your resume</a>`) : ""}
     </div>`;
+    $("#e-run")?.addEventListener("click", () => startRun());
     return;
   }
   area.innerHTML = `
@@ -307,137 +316,396 @@ async function undo() {
 
 /* ================================================================== PROFILE */
 let pollTimer = null;
+const LEVEL_NAMES = { internship: "Internship", entry: "Entry level", mid: "Mid level", senior: "Senior", staff_plus: "Staff+ / manager" };
+const FIELD_NAMES = { ai_ml_engineering: "AI/ML engineering", applied_ai_products: "Applied AI", data_science: "Data science",
+  data_engineering: "Data engineering", backend: "Backend", full_stack: "Full stack", frontend: "Frontend",
+  devops_platform: "DevOps / platform", research: "Research", other_engineering: "Other engineering", non_engineering: "Non-engineering" };
+let profileTimer = null;
 
 async function renderProfile() {
-  const [profile, settings, st] = await Promise.all([api("/api/profile"), api("/api/settings"), api("/api/status")]);
-  status = st;
-  const noKey = !st.jev.available ? `<div class="warnbox"><b>No decision engine is configured.</b> Start the local Kev engine with <code>./run.sh</code> (see <code>.env</code>), or add a TypeSafe/OpenRouter key. Until then a basic keyword heuristic is used.</div>` : "";
+  clearTimeout(profileTimer);
+  const profile = await api("/api/profile");
+  if (!profile) return renderOnboarding();
+  const res = profile.resume;
+  const job = profile.job || {};
+  const initials = esc((profile.name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase());
+  const roles = profile.search_terms || [], skills = profile.keywords || [];
+  const keptRoles = roles.filter((t) => t.keep), moreRoles = roles.filter((t) => !t.keep);
+  const keptSkills = skills.filter((k) => k.keep), leftSkills = skills.filter((k) => !k.keep);
+  const reads = (profile.fields || []).slice(0, 2).map((f) => FIELD_NAMES[f.name] || f.name).join(" · ");
+  const input = (f, ph = "", cls = "") => `<input class="plain ${cls}" data-f="${f}" value="${esc(profile[f] || "")}" placeholder="${ph}" aria-label="${ph || f}">`;
 
-  if (!profile) {
-    view.innerHTML = `${noKey}<div class="card-box empty">
-      <h2>Build your profile</h2>
-      <p>${E()} reads your resume and decides which keywords to keep, your field and level, and which job titles to search for.</p>
-      <div class="row" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button class="btn primary" id="p-build">Use Devesh_Patel_Resume.tex</button>
-        <label class="btn">Upload resume…<input type="file" id="p-upload" accept=".pdf,.tex,.txt,.md" hidden></label>
-      </div></div>`;
-    $("#p-build").onclick = () => buildProfile();
-    $("#p-upload").onchange = (e) => buildProfile(e.target.files[0]);
-    return;
-  }
-
-  const fieldLabel = (k) => k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-  const kept = profile.keywords.filter((k) => k.keep).length;
-  view.innerHTML = `${noKey}
-  <div class="grid-2">
+  view.innerHTML = `
+  <div class="profile">
     <div class="stack">
-      <section class="card-box me">
-        <img class="photo" src="/api/avatar" alt="" onerror="this.style.visibility='hidden'">
-        <h1>${esc(profile.name)}</h1>
-        <div class="headline">${esc(profile.headline)}</div>
-        <div class="row"${STATIC_MODE ? ' hidden' : ''}>
-          <button class="btn small" id="p-rebuild">${profile.scored_by === "jev" ? `Re-run ${E()} on resume` : `Build with ${E()}`}</button>
-          <label class="btn small">Upload new resume<input type="file" id="p-upload" accept=".pdf,.tex,.txt,.md" hidden></label>
+      <section class="card-box me2">
+        <label class="photo-edit" title="Change photo">
+          ${profile.photo_url ? `<img src="${esc(profile.photo_url)}" alt="">` : `<span class="ph">${initials}</span>`}
+          <input type="file" accept="image/*" id="p-photo" hidden><span class="cam">Change</span>
+        </label>
+        <div class="me2-main">
+          ${input("name", "Your name", "h1")}
+          <textarea class="plain sub" data-f="headline" rows="1" data-autosize placeholder="Headline, e.g. Full-stack & AI engineer" aria-label="Headline">${esc(profile.headline || "")}</textarea>
+          <div class="me2-meta">
+            <label><span aria-hidden="true">📍</span>${input("location", "Location")}</label>
+            <label><span aria-hidden="true">✉️</span>${input("email", "Email")}</label>
+          </div>
         </div>
-        <dl class="kv">
-          <dt>Resume</dt><dd>${esc(profile.resume_file)}</dd>
-          <dt>Location</dt><dd>${esc(profile.location)}</dd>
-          <dt>Email</dt><dd>${esc(profile.email)}</dd>
-          <dt>Profile by</dt><dd>${profile.scored_by === "jev" ? `<span class="chip good">${esc(E())}</span>` : '<span class="chip warn">Heuristic</span>'}</dd>
-        </dl>
       </section>
+
       <section class="card-box">
-        <h3 class="section-title">Projects to point to</h3>
-        <div class="proj">${Object.entries(profile.projects || {}).map(([n, d]) => `<div><b>${esc(n)}</b><span class="muted">${esc(d || "")}</span></div>`).join("")}</div>
+        <h3 class="section-title">What you're looking for</h3>
+        <textarea class="input" data-f="goal" rows="2" data-autosize placeholder="e.g. An AI/ML or full-stack role where shipping fast matters">${esc(profile.goal || "")}</textarea>
+        <div class="pref-row">
+          <label>Your level<select class="input" data-f="level">${Object.entries(LEVEL_NAMES).map(([k, v]) =>
+            `<option value="${k}" ${k === profile.level ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+          <label>Based in<select class="input" data-f="country">${[...new Set([...(profile.countries || []), profile.country].filter(Boolean))].map((c) =>
+            `<option ${c === profile.country ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+        </div>
+        ${reads ? `<p class="faint small">${esc(E())} reads you as <b>${esc(reads)}</b>. Every job is matched against this, your skills and your resume.</p>` : ""}
       </section>
+
+      <section class="card-box o-late">
+        <h3 class="section-title">Roles ${esc(E())} searches for</h3>
+        <div class="chips" id="p-roles">${keptRoles.map((t) => chipX(t.name, roles.indexOf(t), "role")).join("") || '<span class="faint small">None yet — add one below.</span>'}</div>
+        <div class="add-row"><input class="input" id="p-role-new" placeholder="Add a role, e.g. Python Backend Developer"><button class="btn" id="p-role-add">Add</button></div>
+        ${moreRoles.length ? `<details class="more"><summary>More roles ${esc(E())} suggests (${moreRoles.length})</summary>
+          <div class="chips">${moreRoles.map((t) => chipPlus(t.name, roles.indexOf(t), "role")).join("")}</div></details>` : ""}
+      </section>
+
+      <section class="card-box o-late">
+        <h3 class="section-title">Skills jobs are matched on</h3>
+        <div class="chips" id="p-skills">${keptSkills.map((k) => chipX(k.name, skills.indexOf(k), "skill", k.core)).join("")}</div>
+        <div class="add-row"><input class="input" id="p-skill-new" placeholder="Add a skill"><button class="btn" id="p-skill-add">Add</button></div>
+        ${leftSkills.length ? `<details class="more"><summary>Left out (${leftSkills.length})</summary>
+          <div class="chips">${leftSkills.map((k) => chipPlus(k.name, skills.indexOf(k), "skill")).join("")}</div></details>` : ""}
+        <p class="faint small" style="margin-bottom:0">Highlighted = skills ${esc(E())} sees you actually use in your work and projects.</p>
+      </section>
+
+      ${Object.keys(profile.projects || {}).length ? `<section class="card-box o-late">
+        <h3 class="section-title">Projects ${esc(E())} can tell you to lead with</h3>
+        <div class="proj">${Object.entries(profile.projects).map(([n, d]) => `<div><b>${esc(n)}</b><span class="muted">${esc(d || "")}</span></div>`).join("")}</div>
+      </section>` : ""}
     </div>
 
-    <div class="stack">
-      <section class="card-box">
-        <h3 class="section-title">Pipeline</h3>
-        <div class="checks" id="s-sources">${["remotive", "himalayas", "jobicy", "weworkremotely", "arbeitnow", "hackernews", "greenhouse", "ashby", "lever"].map((s) =>
-          `<label><input type="checkbox" value="${s}" ${settings.sources.includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</div>
-        <div class="range-row"><label for="s-min">Min match</label><input type="range" id="s-min" min="0" max="95" step="5" value="${settings.min_match}"><b id="s-min-v">${settings.min_match}</b></div>
-        <div class="range-row"><label for="s-age">Max age (days)</label><input type="range" id="s-age" min="7" max="120" step="1" value="${settings.max_age_days}"><b id="s-age-v">${settings.max_age_days}</b></div>
-        <div class="range-row"><label for="s-deep">Deep evals / run</label><input type="range" id="s-deep" min="25" max="1000" step="25" value="${settings.max_deep}"><b id="s-deep-v">${settings.max_deep}</b></div>
-        <div class="range-row"><label for="s-daily">Daily run at</label>
-          <div style="display:flex;gap:10px;align-items:center"><input class="input" type="time" id="s-daily" value="${esc(settings.daily_at || "")}" style="width:auto">
-          <label class="checks"><label><input type="checkbox" id="s-daily-on" ${settings.daily_at ? "checked" : ""}> on</label></label></div><span></span></div>
-        <p class="faint" style="font-size:12.5px;margin:0 0 10px">${STATIC_MODE
-          ? "Runs on GitHub Actions at this time (your timezone) every day — your devices can be off. Only new postings are processed."
-          : "Runs automatically while the app is open; if the Mac was off or the app closed at that time, it catches up when you next start it. Only new postings are processed."}</p>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
-          <button class="btn primary" id="run">Run pipeline</button>
-          <label class="checks"><label><input type="checkbox" id="reeval"> Re-evaluate jobs already on the board</label></label>
+    <section class="card-box resume-card">
+      <div class="rc-head">
+        <div><h3 class="section-title" style="margin:0">Resume</h3>
+          <div class="faint small">${res ? `${esc(res.filename || "resume")} · updated ${esc(ago(res.updated_at) || "")}` : "No resume yet"}</div></div>
+        <div class="rc-actions">
+          ${res?.kind === "tex" ? `<button class="btn small" id="r-edit">Edit</button>` : ""}
+          <label class="btn small">Upload<input type="file" id="r-upload" accept=".tex,.pdf" hidden></label>
+          ${res ? `<button class="btn small" id="r-dl">Download</button>` : ""}
         </div>
-        <div id="run-status"></div>
-      </section>
-
-      <section class="card-box" id="kaggle-box"></section>
-
-      <section class="card-box">
-        <h3 class="section-title">${E()}'s read of you</h3>
-        <div class="field-row"><label>Level</label>
-          <select class="input" id="p-level">${Object.entries(profile.level_labels).map(([k, v]) => `<option value="${k}" ${k === profile.level ? "selected" : ""}>${fieldLabel(k)} — ${esc(v.split(";")[0])}</option>`).join("")}</select></div>
-        <div class="field-row"><label>Country</label>
-          <select class="input" id="p-country">${profile.countries.concat(profile.countries.includes(profile.country) ? [] : [profile.country]).filter(Boolean).map((c) => `<option ${c === profile.country ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
-        <div class="field-row"><label>Goal</label><input class="input" id="p-goal" value="${esc(profile.goal)}"></div>
-        <h3 class="section-title" style="margin-top:18px">Field ${profile.level_confidence != null ? `<span class="faint" style="text-transform:none;letter-spacing:0">· level confidence ${pct(profile.level_confidence)}</span>` : ""}</h3>
-        <div class="bars">${profile.fields.map((f) => `<div class="bar"><span>${fieldLabel(f.name)}</span><div class="track"><div class="fill" style="width:${(f.p ?? 0.5) * 100}%"></div></div><span class="v">${f.p == null ? "—" : pct(f.p)}</span></div>`).join("")}</div>
-      </section>
-
-      <section class="card-box">
-        <h3 class="section-title">Search terms <span class="faint" style="text-transform:none;letter-spacing:0">· ${E()} picked the highlighted titles; click to toggle</span></h3>
-        <div class="chips" id="p-terms">${profile.search_terms.map((t, i) => `<button class="chip toggle-chip ${t.keep ? "on core" : ""}" data-i="${i}">${esc(t.name)} ${t.p != null ? `<small>${pct(t.p)}</small>` : ""}</button>`).join("")}</div>
-        <div class="add-row"><input class="input" id="p-term-new" placeholder="Add a search term, e.g. “Python Backend Developer”"><button class="btn" id="p-term-add">Add</button></div>
-      </section>
-
-      <section class="card-box">
-        <h3 class="section-title">Keywords · ${kept} kept of ${profile.keywords.length}</h3>
-        <div class="chips" id="p-kws">${profile.keywords.map((k, i) => `<button class="chip toggle-chip ${k.keep ? "on" : ""} ${k.core ? "core" : ""}" data-i="${i}" title="${k.used == null ? "" : `used in projects/work: ${pct(k.used)} · commonly required: ${pct(k.market)}`}">${esc(k.name)}</button>`).join("")}</div>
-        <p class="legend">Blue = core (${E()} sees it used in your work) · grey = kept · struck-through = dropped. Kept keywords are what jobs get matched against.</p>
-      </section>
-    </div>
+      </div>
+      <div id="r-status">${resumeStatus(profile, res, job)}</div>
+      <div class="pdf-view" id="r-view">${res ? '<p class="faint small">Loading…</p>' : '<p class="faint small">Upload your resume as LaTeX (.tex — editable here) or PDF.</p>'}</div>
+    </section>
   </div>`;
 
-  $("#p-rebuild").onclick = () => buildProfile();
-  $("#p-upload").onchange = (e) => buildProfile(e.target.files[0]);
-  const save = async (patch) => { await api("/api/profile", { method: "PATCH", json: patch }); toast("Profile saved"); };
-  $("#p-level").onchange = (e) => save({ level: e.target.value });
-  $("#p-country").onchange = (e) => save({ country: e.target.value });
-  $("#p-goal").onchange = (e) => save({ goal: e.target.value });
-  $("#p-terms").onclick = (e) => {
-    const b = e.target.closest("button"); if (!b) return;
-    const t = profile.search_terms[+b.dataset.i]; t.keep = !t.keep;
-    b.classList.toggle("on", t.keep); b.classList.toggle("core", t.keep);
-    save({ search_terms: profile.search_terms });
-  };
-  $("#p-term-add").onclick = () => {
-    const v = $("#p-term-new").value.trim(); if (!v) return;
-    profile.search_terms.unshift({ name: v, p: null, keep: true });
-    save({ search_terms: profile.search_terms }).then(renderProfile);
-  };
-  $("#p-kws").onclick = (e) => {
-    const b = e.target.closest("button"); if (!b) return;
-    const k = profile.keywords[+b.dataset.i]; k.keep = !k.keep;
-    b.classList.toggle("on", k.keep);
-    save({ keywords: profile.keywords });
-  };
+  // -- your details: saved as you leave each field (and kept when Kev re-reads the resume)
+  view.querySelectorAll("[data-f]").forEach((el) => (el.onchange = async () => {
+    await api("/api/profile", { method: "PATCH", json: { [el.dataset.f]: el.value.trim() } });
+    toast("Saved");
+  }));
+  $("#p-photo").onchange = (e) => e.target.files[0] && setPhoto(e.target.files[0]);
+  view.querySelectorAll("[data-autosize]").forEach((t) => {
+    const fit = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; };
+    t.addEventListener("input", fit); requestAnimationFrame(fit);
+    t.addEventListener("keydown", (e) => { if (e.key === "Enter" && t.classList.contains("plain")) { e.preventDefault(); t.blur(); } });
+  });
 
+  // -- roles & skills: × removes, + brings back, Add adds your own
+  const saveList = async (key, list) => { await api("/api/profile", { method: "PATCH", json: { [key]: list } }); renderProfile(); };
+  const onChips = (e) => {
+    const b = e.target.closest("[data-kind]"); if (!b) return;
+    const [key, list] = b.dataset.kind === "role" ? ["search_terms", roles] : ["keywords", skills];
+    const it = list[+b.dataset.i];
+    it.keep = b.dataset.act === "add"; it.user_set = true;
+    saveList(key, list);
+  };
+  view.querySelectorAll(".chips").forEach((c) => (c.onclick = onChips));
+  const adder = (inputId, btnId, key, list, extra) => {
+    const add = () => {
+      const v = $(inputId).value.trim(); if (!v) return;
+      const hit = list.find((x) => x.name.toLowerCase() === v.toLowerCase());
+      if (hit) Object.assign(hit, { keep: true, user_set: true });
+      else list.unshift({ name: v, p: null, keep: true, added: true, user_set: true, ...extra });
+      saveList(key, list);
+    };
+    $(btnId).onclick = add;
+    $(inputId).onkeydown = (e) => { if (e.key === "Enter") add(); };
+  };
+  adder("#p-role-new", "#p-role-add", "search_terms", roles, {});
+  adder("#p-skill-new", "#p-skill-add", "keywords", skills, { used: null, market: null, core: false });
+
+  // -- resume
+  $("#r-upload").onchange = (e) => e.target.files[0] && uploadResume(e.target.files[0]);
+  $("#r-edit")?.addEventListener("click", openEditor);
+  $("#r-dl")?.addEventListener("click", downloadResume);
+  $("#r-kev")?.addEventListener("click", async () => { await api("/api/profile/build", { method: "POST" }); renderProfile(); });
+  if (res) showResumePdf($("#r-view"));
+  if (job.running || res?.building || (res && !res.pdf_current && !res.error && STATIC_MODE))
+    profileTimer = setTimeout(() => location.hash.startsWith("#/profile") && renderProfile(), job.running ? 3000 : 10000);
+}
+
+const chipX = (name, i, kind, core) =>
+  `<span class="chip pill ${core ? "core" : ""}">${esc(name)}<button data-kind="${kind}" data-i="${i}" data-act="remove" aria-label="Remove ${esc(name)}" title="Remove">×</button></span>`;
+const chipPlus = (name, i, kind) =>
+  `<button class="chip pill ghost" data-kind="${kind}" data-i="${i}" data-act="add" title="Add">+ ${esc(name)}</button>`;
+
+function resumeStatus(profile, res, job) {
+  if (!res) return "";
+  const line = (cls, html) => `<div class="rstat ${cls}">${html}</div>`;
+  if (job.running) return line("busy", `<span class="spin"></span>${esc(job.stage || "Updating your profile")}… (a minute or two)`);
+  if (job.error) return line("bad", `Couldn't update your profile: ${esc(job.error)}`);
+  if (res.error && res.error.rev === res.rev)
+    return line("bad", `LaTeX error: ${esc(res.error.message)}. The PDF below is the previous version — <a href="#" onclick="openEditor();return false">fix it in the editor</a>.`);
+  if (!res.pdf_current && res.kind === "tex")
+    return line("busy", `<span class="spin"></span>${STATIC_MODE ? "Building the PDF on GitHub (about a minute)…" : "Building the PDF…"}`);
+  if (profile.kev_behind)
+    return STATIC_MODE ? line("", `${esc(E())} will re-read this resume the next time the Mac app runs; the basics are already updated.`)
+      : line("", `${esc(E())} hasn't read this version yet. <button class="btn small" id="r-kev">Update profile</button>`);
+  return "";
+}
+
+async function renderOnboarding() {
+  const st = status || (await api("/api/status"));
+  const busy = st.profile_job?.running;
+  view.innerHTML = `<div class="card-box empty onboard">
+    <h2>${busy ? `${esc(E())} is reading your resume…` : "Start with your resume"}</h2>
+    <p>${busy ? "Picking your skills, level and the roles to search for. This takes a minute or two."
+      : `Upload it as LaTeX (.tex — you can edit and rebuild it here) or PDF. ${esc(E())} reads it and picks your skills, level and the roles to search for.`}</p>
+    ${busy ? '<div class="spin big"></div>' : `<label class="btn primary">Upload resume<input type="file" id="r-upload" accept=".tex,.pdf" hidden></label>`}
+  </div>`;
+  $("#r-upload")?.addEventListener("change", (e) => e.target.files[0] && uploadResume(e.target.files[0]));
+  if (busy) profileTimer = setTimeout(() => refreshStatus().then(() => location.hash.startsWith("#/profile") && renderProfile()), 3000);
+}
+
+async function uploadResume(file) {
+  toast("Uploading…");
+  try {
+    await api(`/api/resume/upload?filename=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
+    toast(file.name.endsWith(".pdf") ? "Resume saved" : "Resume saved — building the PDF");
+  } catch (e) { return toast(e.message); }
+  await refreshStatus();
+  renderProfile();
+}
+
+async function setPhoto(file) {
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = URL.createObjectURL(file); });
+  const side = Math.min(img.width, img.height), size = Math.min(480, side);
+  const c = Object.assign(document.createElement("canvas"), { width: size, height: size });
+  c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+  try { await api("/api/photo", { method: "PUT", json: { data_url: c.toDataURL("image/jpeg", 0.86) } }); toast("Photo updated"); }
+  catch (e) { toast(e.message); }
+  renderProfile();
+}
+
+/* ------------------------------------------------------------------ resume PDF: render pages with pdf.js */
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/";
+let pdfjsLib = null;
+async function pdfBytes() {
+  if (STATIC_MODE) return (await Static.resumePdf())?.bytes || null;
+  const r = await fetch("api/resume.pdf", { cache: "no-store" });
+  return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+}
+async function showResumePdf(el) {
+  const bytes = await pdfBytes().catch(() => null);
+  if (!bytes) { el.innerHTML = `<p class="faint small">No PDF yet.</p>`; return; }
+  await renderPdf(el, bytes);
+}
+async function renderPdf(el, bytes) {
+  try {
+    pdfjsLib ||= await import(PDFJS + "pdf.min.mjs").then((m) => { m.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs"; return m; });
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+    const frag = document.createDocumentFragment(), width = el.clientWidth || 600, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const vp = page.getViewport({ scale: (width / page.getViewport({ scale: 1 }).width) * dpr });
+      const c = Object.assign(document.createElement("canvas"), { width: vp.width, height: vp.height, className: "pdf-page" });
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      frag.append(c);
+    }
+    el.replaceChildren(frag);
+  } catch (e) {                                           // offline / no pdf.js: the browser's own viewer
+    console.warn(e);
+    el.innerHTML = `<iframe class="pdf-frame" title="Resume" src="${URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))}"></iframe>`;
+  }
+}
+async function downloadResume() {
+  const bytes = await pdfBytes();
+  if (!bytes) return toast("No PDF yet");
+  const p = await api("/api/profile");
+  const name = (p?.resume?.filename || "resume").replace(/\.(tex|pdf)$/i, "") + ".pdf";
+  Object.assign(document.createElement("a"), { download: name, href: URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })) }).click();
+}
+
+/* ------------------------------------------------------------------ resume editor (LaTeX) */
+async function openEditor() {
+  const r = await api("/api/resume");
+  const draftKey = "resume-draft";
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (_) { /* storage off */ }
+  const restored = draft && draft.base === r.rev && draft.tex !== r.tex;
+  const box = document.createElement("div");
+  box.className = "editor";
+  box.setAttribute("role", "dialog");
+  box.innerHTML = `
+    <div class="ed-bar">
+      <b class="ed-name">${esc(r.filename || "resume.tex")}</b>
+      <span class="faint small ed-msg" id="ed-msg" aria-live="polite">${restored ? 'Restored your unsaved edits · <a href="#" id="ed-discard">discard</a>' : ""}</span>
+      <div class="ed-tabs seg"><button class="active" data-pane="src">LaTeX</button><button data-pane="prev">Preview</button></div>
+      ${STATIC_MODE ? "" : `<button class="btn small" id="ed-preview" title="⌘↵">Preview</button>`}
+      <button class="btn small primary" id="ed-save" title="⌘S">${STATIC_MODE ? "Save & build" : "Save"}</button>
+      <button class="btn small" id="ed-close">Close</button>
+    </div>
+    <div class="ed-body" data-show="src">
+      <textarea id="ed-src" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+      <div class="ed-prev"><div id="ed-err" class="rstat bad" hidden></div><div class="pdf-view" id="ed-view"></div></div>
+    </div>`;
+  document.body.append(box);
+  document.body.classList.add("modal-open");
+  const src = $("#ed-src", box), msg = (h) => ($("#ed-msg", box).innerHTML = h);
+  src.value = restored ? draft.tex : r.tex || "";
+  let savedText = r.tex || "";
+  const dirty = () => src.value !== savedText;
+  showResumePdf($("#ed-view", box));
+
+  const showError = (message, log) => {
+    const e = $("#ed-err", box);
+    e.hidden = false;
+    e.innerHTML = `LaTeX error: ${esc(message)}${log ? `<details><summary>Log</summary><pre>${esc(log)}</pre></details>` : ""}`;
+    const m = /line (\d+)/.exec(message);
+    if (m) {                                             // jump to the line
+      const lines = src.value.split("\n"), n = Math.min(+m[1], lines.length) - 1;
+      const start = lines.slice(0, n).reduce((a, l) => a + l.length + 1, 0);
+      src.setSelectionRange(start, start + (lines[n] || "").length);
+    }
+  };
+  let previewing = false, previewTimer = null;
+  const preview = async () => {
+    if (STATIC_MODE || previewing) return;
+    previewing = true; msg("Compiling…");
+    try {
+      const resp = await fetch("api/resume/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tex: src.value }) });
+      if (resp.status === 422) { const e = await resp.json(); showError(e.detail, e.log); msg(""); }
+      else if (!resp.ok) msg(esc((await resp.json().catch(() => ({}))).detail || resp.statusText));
+      else { $("#ed-err", box).hidden = true; await renderPdf($("#ed-view", box), new Uint8Array(await resp.arrayBuffer())); msg(dirty() ? "Preview · not saved yet" : "Preview"); }
+    } catch (e) { msg(esc(e.message)); }
+    previewing = false;
+  };
+  const save = async () => {
+    const btn = $("#ed-save", box);
+    btn.disabled = true; msg(STATIC_MODE ? "Saving…" : "Saving and compiling…");
+    try {
+      const out = await api("/api/resume", { method: "PUT", json: { tex: src.value } });
+      savedText = src.value;
+      try { localStorage.removeItem(draftKey); } catch (_) { /* storage off */ }
+      if (out.error && out.error.rev === out.rev) { showError(out.error.message); msg("Saved — but LaTeX failed, so the PDF is the previous version"); }
+      else if (STATIC_MODE) msg("Saved · building the PDF on GitHub (about a minute)");
+      else { $("#ed-err", box).hidden = true; msg(`Saved · ${esc(E())} is re-reading it`); showResumePdf($("#ed-view", box)); }
+    } catch (e) { msg(esc(e.message)); }
+    btn.disabled = false;
+  };
+  const close = () => {
+    if (dirty() && !confirm("Close without saving? Your edits stay as a draft in this browser.")) return;
+    box.remove(); document.body.classList.remove("modal-open"); document.removeEventListener("keydown", keys);
+    renderProfile();
+  };
+  const keys = (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key === "s") { e.preventDefault(); save(); }
+    else if (mod && e.key === "Enter") { e.preventDefault(); preview(); }
+    else if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", keys);
+  src.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    src.setRangeText("  ", src.selectionStart, src.selectionEnd, "end");
+  });
+  src.addEventListener("input", () => {
+    try { localStorage.setItem(draftKey, JSON.stringify({ base: r.rev, tex: src.value })); } catch (_) { /* storage off */ }
+    msg(dirty() ? "Unsaved changes" : "");
+    clearTimeout(previewTimer);
+    if (!STATIC_MODE) previewTimer = setTimeout(preview, 1500);    // live preview on the Mac
+  });
+  $("#ed-save", box).onclick = save;
+  $("#ed-close", box).onclick = close;
+  $("#ed-preview", box)?.addEventListener("click", preview);
+  $("#ed-discard", box)?.addEventListener("click", (e) => { e.preventDefault(); src.value = r.tex; try { localStorage.removeItem(draftKey); } catch (_) { /* */ } msg(""); });
+  box.querySelectorAll(".ed-tabs button").forEach((b) => (b.onclick = () => {
+    box.querySelectorAll(".ed-tabs button").forEach((x) => x.classList.toggle("active", x === b));
+    $(".ed-body", box).dataset.show = b.dataset.pane;
+  }));
+  src.setSelectionRange(0, 0);
+  src.focus();
+  src.scrollTop = 0;
+}
+
+/* ================================================================== SETTINGS */
+const pickyLabel = (v) => (v <= 30 ? "Show me more" : v <= 45 ? "Balanced" : v <= 60 ? "Picky" : "Only strong matches");
+
+async function renderSettings() {
+  const [settings, st] = await Promise.all([api("/api/settings"), api("/api/status")]);
+  status = st;
+  const SOURCES = ["remotive", "himalayas", "jobicy", "weworkremotely", "arbeitnow", "hackernews", "greenhouse", "ashby", "lever"];
+  const noEngine = !st.jev.available ? `<div class="warnbox"><b>No decision engine is configured.</b> Start the local Kev engine with <code>./run.sh</code> (see <code>.env</code>). Until then a basic keyword heuristic is used.</div>` : "";
+  view.innerHTML = `
+  <div class="settings">
+    <h1>Settings</h1>
+    ${noEngine}
+    <section class="card-box">
+      <h3 class="section-title">Job search</h3>
+      <div class="set-row">
+        <div><b>How picky</b><div class="faint small">Jobs ${esc(E())} scores below this stay off your deck.</div></div>
+        <div class="picky"><input type="range" id="s-min" min="20" max="80" step="5" value="${settings.min_match}" aria-label="Minimum match">
+          <span id="s-min-v"><b>${settings.min_match}</b> · ${pickyLabel(settings.min_match)}</span></div>
+      </div>
+      <div class="set-row">
+        <div><b>Daily search</b><div class="faint small">${STATIC_MODE ? "Runs on GitHub at this time in your timezone — your devices can be off."
+          : st.github?.enabled ? "Runs on GitHub at this time — the Mac can be off." : "Runs while the app is open, and catches up when you next start it."}</div></div>
+        <div class="inline"><label class="switch"><input type="checkbox" id="s-daily-on" ${settings.daily_at ? "checked" : ""}><span></span></label>
+          <input class="input" type="time" id="s-daily" value="${esc(settings.daily_at || "09:00")}"></div>
+      </div>
+      <div class="set-row">
+        <div><b>Search now</b><div class="faint small" id="last-run"></div></div>
+        <button class="btn primary" id="run">Find jobs now</button>
+      </div>
+      <div id="run-status"></div>
+    </section>
+
+    <section class="card-box" id="kaggle-box"></section>
+
+    <details class="card-box adv">
+      <summary>Advanced</summary>
+      <p class="faint small">${esc(E())} tunes most of this itself; change it only if you have a reason.</p>
+      <h4>Job sources</h4>
+      <div class="checks" id="s-sources">${SOURCES.map((s) => `<label><input type="checkbox" value="${s}" ${settings.sources.includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</div>
+      <div class="range-row"><label for="s-age">Ignore postings older than (days)</label><input type="range" id="s-age" min="7" max="120" step="1" value="${settings.max_age_days}"><b id="s-age-v">${settings.max_age_days}</b></div>
+      <div class="range-row"><label for="s-deep">Most jobs to read in depth per run</label><input type="range" id="s-deep" min="25" max="1000" step="25" value="${settings.max_deep}"><b id="s-deep-v">${settings.max_deep}</b></div>
+      <label class="checks" style="margin-top:8px"><label><input type="checkbox" id="reeval"> Next manual run: re-read jobs already on the board</label></label>
+    </details>
+  </div>`;
+
+  const minEl = $("#s-min");
+  minEl.oninput = () => ($("#s-min-v").innerHTML = `<b>${minEl.value}</b> · ${pickyLabel(+minEl.value)}`);
+  minEl.onchange = async () => {
+    const r = await api("/api/settings", { method: "PATCH", json: { min_match: +minEl.value } });
+    toast(r.rescored_on_board != null ? `${r.rescored_on_board} jobs on your deck now` : "Saved");
+    refreshStatus();
+  };
   const bindRange = (id, key) => {
     const el = $(`#${id}`);
     el.oninput = () => ($(`#${id}-v`).textContent = el.value);
-    el.onchange = async () => {
-      const r = await api("/api/settings", { method: "PATCH", json: { [key]: +el.value } });
-      toast(r.rescored_on_board != null ? `Re-scored — ${r.rescored_on_board} jobs now on the board` : "Saved");
-      refreshStatus();
-    };
+    el.onchange = () => api("/api/settings", { method: "PATCH", json: { [key]: +el.value } }).then(() => toast("Saved"));
   };
-  bindRange("s-min", "min_match"); bindRange("s-age", "max_age_days"); bindRange("s-deep", "max_deep");
+  bindRange("s-age", "max_age_days"); bindRange("s-deep", "max_deep");
   const saveDaily = async () => {
     const on = $("#s-daily-on").checked, at = $("#s-daily").value || "09:00";
     await api("/api/settings", { method: "PATCH", json: { daily_at: on ? at : "" } });
-    toast(on ? `Daily run set for ${at}` : "Daily run turned off");
+    toast(on ? `Daily search at ${at}` : "Daily search off");
   };
   $("#s-daily").onchange = () => { $("#s-daily-on").checked = true; saveDaily(); };
   $("#s-daily-on").onchange = saveDaily;
@@ -445,15 +713,19 @@ async function renderProfile() {
     const sources = [...view.querySelectorAll("#s-sources input:checked")].map((i) => i.value);
     api("/api/settings", { method: "PATCH", json: { sources } }).then(() => toast("Sources saved"));
   };
-  $("#run").onclick = async () => {
-    try { await api("/api/pipeline/run", { json: { reevaluate: $("#reeval").checked } }); }
-    catch (e) { return toast(e.message); }
-    pollRun();
-  };
+  $("#run").onclick = () => startRun($("#reeval").checked);
   drawRunStatus(st.pipeline, st.last_run);
   if (st.pipeline.running) pollRun();
   renderKaggle(settings);
   if (STATIC_MODE) renderSync(); else renderGithub();
+}
+
+async function startRun(reevaluate = false) {
+  try {
+    const r = await api("/api/pipeline/run", { json: { reevaluate } });
+    toast(r.stage?.startsWith("Started on GitHub") || STATIC_MODE ? "Search started on GitHub — new jobs show up when it finishes" : "Searching…");
+  } catch (e) { return toast(e.message); }
+  if (location.hash.startsWith("#/settings")) pollRun();
 }
 
 /* ------------------------------------------------------------------ Mac app: publish to GitHub */
@@ -595,13 +867,13 @@ function renderSync() {
       <button class="btn" id="s-lock">Lock</button>
     </div>`;
   $("#kaggle-box").after(box);
-  $("#s-token-save").onclick = async () => { await Static.setToken($("#s-token").value.trim()); toast("Token saved on this device (encrypted)"); renderProfile(); };
+  $("#s-token-save").onclick = async () => { await Static.setToken($("#s-token").value.trim()); toast("Token saved on this device (encrypted)"); renderSettings(); };
   $("#s-passkey")?.addEventListener("click", async () => {
     try { const n = await Static.addPasskey(navigator.platform || "device"); toast(`Passkey added (${n} total)`); }
     catch (e) { toast(e.message); }
   });
   $("#s-backup").onclick = () => Static.backup();
-  $("#s-restore").onchange = async (e) => { try { await Static.restore(e.target.files[0]); toast("Backup merged"); renderProfile(); } catch (err) { toast(`Restore failed: ${err.message}`); } };
+  $("#s-restore").onchange = async (e) => { try { await Static.restore(e.target.files[0]); toast("Backup merged"); renderSettings(); } catch (err) { toast(`Restore failed: ${err.message}`); } };
   $("#s-lock").onclick = () => Static.lock();
 }
 
@@ -621,7 +893,7 @@ async function renderKaggle(settings) {
     return `${a.verified ? '<span class="chip good">verified</span>' : '<span class="chip">unverified</span>'} <span class="faint">${a.gpu_hours_this_week} h GPU this week</span>`;
   };
   box.innerHTML = `
-    <h3 class="section-title">Where decisions run</h3>
+    <h3 class="section-title">Where ${esc(E())} runs</h3>
     ${STATIC_MODE ? `<p class="faint" style="font-size:13px">Scheduled runs happen on GitHub Actions, with Kev on Kaggle (GPU T4 ×2, then Kaggle CPU). Keys you add here are saved as repository secrets and can't be read back.</p>` : ""}
     <div class="checks" style="margin-bottom:12px${STATIC_MODE ? ";display:none" : ""}">
       <label><input type="radio" name="engine-mode" value="local" ${mode === "local" ? "checked" : ""}> This Mac (Kev-4B, ~18 s/job)</label>
@@ -638,7 +910,7 @@ async function renderKaggle(settings) {
           <td style="white-space:nowrap">${a.key_hint ? `<button class="btn small" data-verify="${esc(a.username)}">Verify</button>` : ""}
             ${a._new ? "" : `<button class="icon-btn" data-remove="${i}" title="Remove account" aria-label="Remove account">${ICON.trash}</button>`}</td>
         </tr>`).join("")}</tbody></table></div>
-    <div class="add-foot"><span class="faint">Get a token at Kaggle → Settings → API → <i>Generate New Token</i> (starts with <code>KGAT_</code>); an older <code>kaggle.json</code> key works too. They stay in this app's local database; the browser only sees the last 4 characters. GPU hours are tracked from this app's runs only — time used in other notebooks on the same account isn't visible.</span>
+    <div class="add-foot"><span class="faint">Get a token at Kaggle → Settings → API → <i>Generate New Token</i> (starts with <code>KGAT_</code>); an older <code>kaggle.json</code> key works too. ${STATIC_MODE ? "They go straight into your repository's secrets and can't be read back." : "They stay in this app's local database; the browser only sees the last 4 characters."} GPU hours are tracked from this app's runs only — time used in other notebooks on the same account isn't visible.</span>
       <button class="btn" id="k-add">+ Row</button><button class="btn primary" id="k-save">Save accounts</button></div>`;
 
   box.querySelectorAll('input[name="engine-mode"]').forEach((r) => (r.onchange = async () => {
@@ -682,36 +954,21 @@ async function renderKaggle(settings) {
   }));
 }
 
-async function buildProfile(file) {
-  view.innerHTML = `<div class="card-box empty"><h2>Asking ${esc(E())} about your resume…</h2><p>Picking keywords, field, level and search terms.${status?.jev?.local ? " A local engine takes a few minutes." : ""}</p></div>`;
-  try {
-    const q = file ? `?filename=${encodeURIComponent(file.name)}` : "";
-    await api(`/api/profile/build${q}`, { method: "POST", body: file || undefined });
-    toast("Profile built");
-  } catch (e) { toast(`Profile build failed: ${e.message}`); }
-  renderProfile(); refreshStatus();
-}
-
 function drawRunStatus(p, last) {
   const el = $("#run-status");
   if (!el) return;
   const running = p.running;
   $("#run").disabled = running;
-  $("#run").textContent = running ? "Running…" : "Run pipeline";
+  $("#run").textContent = running ? "Searching…" : "Find jobs now";
   const s = last?.stats || {};
+  const when = last?.finished ? new Date(last.finished + (last.finished.endsWith("Z") ? "" : "Z")).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  $("#last-run").textContent = last ? `Last search ${when}: ${s.fresh ?? 0} new postings, ${s.evaluated ?? 0} read in depth, ${s.loaded ?? 0} added to your deck.` : "No searches yet.";
   const w = p.total ? Math.round((100 * p.done) / p.total) : running ? 5 : 0;
   el.innerHTML = `
-    ${running || p.log.length ? `<div class="progress"><div style="width:${running ? w : 100}%"></div></div>
-      <div class="faint" style="font-size:13px">${esc(p.stage)}${p.total ? ` · ${p.done}/${p.total}` : ""}${p.error ? ` · <span style="color:var(--bad)">${esc(p.error)}</span>` : ""}</div>` : ""}
-    ${!running && last ? `<div class="stats">
-      <div class="stat"><b>${s.fetched ?? "—"}</b><span>fetched</span></div>
-      <div class="stat"><b>${s.fresh ?? "—"}</b><span>new &amp; recent</span></div>
-      <div class="stat"><b>${s.triaged_in ?? "—"}</b><span>passed triage</span></div>
-      <div class="stat"><b>${s.evaluated ?? "—"}</b><span>deep-evaluated</span></div>
-      <div class="stat"><b>${s.loaded ?? "—"}</b><span>loaded on board</span></div>
-      <div class="stat"><b>${(s.jev?.input_tokens ?? 0).toLocaleString()}</b><span>tokens ${status?.jev?.local ? "(local, free)" : `(~$${(((s.jev?.input_tokens ?? 0) * 0.042) / 1e6).toFixed(3)})`}</span></div>
-    </div><div class="faint" style="font-size:12px;margin-top:8px">Last run ${esc((last.finished || "").replace("T", " "))}</div>` : ""}
-    ${p.log.length ? `<div class="log" id="run-log">${esc(p.log.join("\n"))}</div>` : ""}`;
+    ${running ? `<div class="progress"><div style="width:${w}%"></div></div>
+      <div class="faint small">${esc(p.stage)}${p.total ? ` · ${p.done}/${p.total}` : ""}</div>` : ""}
+    ${p.error ? `<div class="rstat bad">${esc(p.error)}</div>` : ""}
+    ${p.log.length ? `<details class="more"${running ? " open" : ""}><summary>Run log</summary><div class="log" id="run-log">${esc(p.log.join("\n"))}</div></details>` : ""}`;
   const log = $("#run-log");
   if (log) log.scrollTop = log.scrollHeight;
 }
@@ -719,15 +976,15 @@ function drawRunStatus(p, last) {
 function pollRun() {
   clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
-    if (!location.hash.startsWith("#/profile")) return clearInterval(pollTimer);
+    if (!location.hash.startsWith("#/settings")) return clearInterval(pollTimer);
     const st = await api("/api/status");
     drawRunStatus(st.pipeline, st.last_run);
     if (!st.pipeline.running) {
       clearInterval(pollTimer);
       refreshStatus();
-      if (!st.pipeline.error) toast(`Done — ${st.last_run?.stats?.loaded ?? 0} new jobs on the board`, { label: "Review", run: () => (location.hash = "#/applications") });
+      if (!st.pipeline.error && st.last_run) toast(`Done — ${st.last_run?.stats?.loaded ?? 0} new jobs on your deck`, { label: "Review", run: () => (location.hash = "#/applications") });
     }
-  }, 1000);
+  }, STATIC_MODE ? 15000 : 1000);
 }
 
 /* ================================================================== TRACKER */

@@ -36,7 +36,8 @@ from .kaggle import Accounts, KaggleCLI  # noqa: E402
 from .sync import Sync  # noqa: E402
 from .jev import Jev, JevError  # noqa: E402
 from .pipeline import Pipeline  # noqa: E402
-from .profile import build_profile  # noqa: E402
+from .profile import EDITABLE, build_profile, carry_overrides, refresh_profile  # noqa: E402
+from .resume import CompileError, ResumeStore, compile_tex  # noqa: E402
 from .urls import from_page, from_url  # noqa: E402
 
 DEFAULT_RESUME = Path(os.environ.get("RESUME_PATH", ROOT.parent / "Devesh_Patel_Resume.tex"))
@@ -52,11 +53,92 @@ engine = LocalEngine.from_env(ROOT)   # None when using hosted Jev
 pipeline = Pipeline(db, jev, engine)
 sync = Sync(db, log=pipeline.log)
 pipeline.github_mode = lambda: sync.enabled      # daily runs move to GitHub Actions while sync is on
+resumes = ResumeStore(db)
+sync.resumes = resumes
+
+# -- your resume → profile (Kev reads it in the background) ------------------------------------------
+profile_job = {"running": False, "stage": "", "error": None}
+_profile_again = threading.Event()
+
+
+def rebuild_profile() -> None:
+    """Re-read the current resume in the background: with Kev when an engine is available, otherwise a
+    quick update of the facts (Kev catches up later). Your manual edits are kept either way."""
+    if profile_job["running"]:
+        _profile_again.set()
+        return
+
+    def work():
+        while True:
+            _profile_again.clear()
+            res = resumes.get()
+            if not res:
+                break
+            use_kev = jev.available
+            profile_job.update(running=True, error=None,
+                               stage=f"{ENGINE_LABEL} is reading your resume" if use_kev else "Updating your profile")
+            try:
+                resumes.compile_current()
+                path, rev = resumes.text_source()
+                old = db.get("profile")
+                if old and old.get("kev_rev") == rev and old.get("resume_rev") == rev:
+                    break                                # already read this exact resume
+                if use_kev:
+                    with engine.use() if engine else nullcontext():
+                        new = carry_overrides(old, build_profile(path, jev, res.get("filename")))
+                    new["kev_rev"] = rev
+                else:
+                    new = refresh_profile(old, path, rev, res.get("filename"))
+                    new["kev_rev"] = (old or {}).get("kev_rev")
+                new["resume_rev"] = rev
+                db.put("profile", new)
+                db.touch("profile")
+                pipeline.rescore()
+                if sync.enabled:
+                    sync.sync_once()
+            except Exception as e:                       # shown on the Profile page
+                traceback.print_exc()
+                profile_job["error"] = str(e)[:300]
+            finally:
+                profile_job.update(running=False, stage="")
+            if not _profile_again.is_set():
+                break
+    threading.Thread(target=work, daemon=True, name="profile").start()
+
+
+def _adopt_existing_files() -> None:
+    """First start with this version: take over the resume file and photo you already had."""
+    if not resumes.get():
+        res = resumes.import_file(DEFAULT_RESUME)
+        p = db.get("profile")
+        if p and res and not p.get("resume_rev"):
+            p["resume_rev"] = p["kev_rev"] = res["rev"]        # the profile was built from this file
+            p.setdefault("overrides", {})
+            db.put("profile", p)
+            db.touch("profile")
+    if not db.get("photo") and AVATAR.exists():
+        import base64
+        mime = "image/png" if AVATAR.suffix.lower() == ".png" else "image/jpeg"
+        db.put("photo", f"data:{mime};base64,{base64.b64encode(AVATAR.read_bytes()).decode()}")
+        db.touch("photo")
+
+
+def _kev_behind() -> bool:
+    p, res = db.get("profile"), resumes.get()
+    return bool(res and (not p or p.get("kev_rev") != res.get("rev")))
+
+
+_adopt_existing_files()
+sync.on_resume_changed = rebuild_profile
 if sync.enabled and not os.environ.get("JOBBOARD_HEADLESS"):
     sync.start_loop(300)
     threading.Thread(target=sync.sync_once, daemon=True).start()
 if os.environ.get("DAILY_SCHEDULER", "1") == "1" and not os.environ.get("JOBBOARD_HEADLESS"):
     pipeline.start_scheduler()
+if not os.environ.get("JOBBOARD_HEADLESS"):
+    # the resume changed elsewhere while the app was closed (checked after the first sync has had a moment)
+    threading.Timer(45, lambda: _kev_behind() and not profile_job["running"] and rebuild_profile()).start()
+
 app = FastAPI(title="Job Board")
 app.mount("/static", StaticFiles(directory=str(WEB)), name="static")
 
@@ -160,11 +242,26 @@ def index():
     return FileResponse(WEB / "index.html")
 
 
+@app.get("/api/photo")
 @app.get("/api/avatar")
-def avatar():
-    if not AVATAR.exists():
+def photo():
+    import base64
+    data = db.get("photo")
+    if not data:
         raise HTTPException(404)
-    return FileResponse(AVATAR)
+    head, _, b64 = data.partition(",")
+    return Response(base64.b64decode(b64), media_type=head[5:].split(";")[0] or "image/jpeg",
+                    headers={"Cache-Control": "no-cache"})
+
+
+@app.put("/api/photo")
+async def set_photo(request: Request):
+    data = (await request.json()).get("data_url", "")
+    if not re.match(r"^data:image/(jpeg|png|webp);base64,", data) or len(data) > 700_000:
+        raise HTTPException(400, "Send a JPEG/PNG/WebP under 500 KB")
+    db.put("photo", data)
+    db.touch("photo")
+    return {"ok": True}
 
 
 # -- status ---------------------------------------------------------------
@@ -178,6 +275,7 @@ def status():
         "pipeline": pipeline.state,
         "last_run": db.last_run(),
         "has_profile": db.get("profile") is not None,
+        "profile_job": profile_job,
         "github": sync.public(),
     }
 
@@ -186,8 +284,14 @@ def status():
 def _public_profile(p: Optional[dict]) -> Optional[dict]:
     if not p:
         return None
+    import hashlib
+    photo = db.get("photo")
+    res = resumes.public()
     return {k: v for k, v in p.items() if k != "resume_text"} | {
-        "field_labels": Q.FIELDS, "level_labels": Q.LEVELS, "countries": Q.COUNTRIES}
+        "field_labels": Q.FIELDS, "level_labels": Q.LEVELS, "countries": Q.COUNTRIES,
+        "photo_url": f"/api/photo?v={hashlib.sha1(photo.encode()).hexdigest()[:8]}" if photo else None,
+        "resume": {k: v for k, v in res.items() if k != "tex"} if res else None,
+        "kev_behind": _kev_behind(), "job": profile_job}
 
 
 @app.get("/api/profile")
@@ -197,32 +301,18 @@ def get_profile():
 
 @app.post("/api/profile/build")
 async def build(request: Request, filename: Optional[str] = None):
-    """Build (or rebuild) the profile. Body = uploaded resume bytes, or empty to use the default file."""
-    body = await request.body()
-    if body:
-        suffix = Path(filename or "resume.pdf").suffix.lower()
-        if suffix not in (".pdf", ".tex", ".txt", ".md"):
-            raise HTTPException(400, "Upload a .pdf, .tex, .txt or .md resume")
-        path = DATA_DIR / f"resume{suffix}"
-        path.write_bytes(body)
-    else:
-        prev = db.get("profile")
-        path = DATA_DIR / prev["resume_file"] if prev and (DATA_DIR / prev["resume_file"]).exists() else DEFAULT_RESUME
-    if not path.exists():
-        raise HTTPException(400, f"Resume not found at {path}")
-    try:
-        with engine.use() if engine else nullcontext():
-            profile = build_profile(path, jev)
-    except (JevError, RuntimeError) as e:
-        raise HTTPException(502, str(e))
-    db.put("profile", profile)
-    db.touch("profile")
-    return _public_profile(profile)
+    """Re-read the resume (in the background). With a body, that body is a new resume upload first."""
+    if await request.body():
+        return await upload_resume(request, filename)
+    if not resumes.get():
+        raise HTTPException(400, "Add your resume first")
+    rebuild_profile()
+    return {"started": True, "job": profile_job}
 
 
 @app.patch("/api/profile")
 async def patch_profile(request: Request):
-    """User overrides of Jev's picks: keyword/search-term toggles, added terms, level, country, goal."""
+    """Your edits: fields on the Profile page (remembered as overrides), and skills/roles you add or switch."""
     p = db.get("profile")
     if not p:
         raise HTTPException(400, "Build a profile first")
@@ -230,12 +320,74 @@ async def patch_profile(request: Request):
     for k in ("keywords", "search_terms", "fields", "projects"):
         if k in patch:
             p[k] = patch[k]
-    for k in ("level", "country", "goal", "location", "headline"):
+    ov = dict(p.get("overrides") or {})
+    for k in EDITABLE:
         if k in patch:
-            p[k] = patch[k]
+            p[k] = ov[k] = patch[k]
+    p["overrides"] = ov
     db.put("profile", p)
     db.touch("profile")
     return _public_profile(p)
+
+
+# -- resume ------------------------------------------------------------------------------------------
+@app.get("/api/resume")
+def get_resume():
+    res = resumes.public()
+    if not res:
+        raise HTTPException(404, "No resume yet")
+    return res
+
+
+@app.get("/api/resume.pdf")
+def resume_pdf():
+    pdf = resumes.pdf()
+    if not pdf:
+        raise HTTPException(404, "No PDF yet")
+    res = resumes.get() or {}
+    name = Path(res.get("filename") or "resume.pdf").with_suffix(".pdf").name
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-cache"})
+
+
+@app.put("/api/resume")
+async def save_resume(request: Request):
+    """Save edited LaTeX: compiles it (the previous PDF stays if LaTeX fails) and Kev re-reads it."""
+    b = await request.json()
+    tex = b.get("tex") or ""
+    if "\\begin{document}" not in tex:
+        raise HTTPException(400, "That doesn't look like a LaTeX document (no \\begin{document})")
+    res = resumes.save_tex(tex, b.get("filename"))
+    rebuild_profile()
+    return resumes.public() | {"compiled": not res.get("error")}
+
+
+@app.post("/api/resume/preview")
+async def preview_resume(request: Request):
+    """Compile without saving, for the editor's preview."""
+    tex = (await request.json()).get("tex") or ""
+    try:
+        pdf = compile_tex(tex)
+    except CompileError as e:
+        return JSONResponse({"detail": str(e), "log": e.log[-2500:]}, status_code=422)
+    return Response(pdf, media_type="application/pdf")
+
+
+@app.post("/api/resume/upload")
+async def upload_resume(request: Request, filename: Optional[str] = None):
+    body = await request.body()
+    name = Path(filename or "resume.pdf").name
+    suffix = Path(name).suffix.lower()
+    if suffix == ".tex":
+        resumes.save_tex(body.decode("utf-8", errors="replace"), name)
+    elif suffix == ".pdf":
+        if not body.startswith(b"%PDF"):
+            raise HTTPException(400, "That file isn't a PDF")
+        resumes.save_pdf(body, name)
+    else:
+        raise HTTPException(400, "Upload your resume as .tex (editable here) or .pdf")
+    rebuild_profile()
+    return resumes.public()
 
 
 # -- settings -------------------------------------------------------------

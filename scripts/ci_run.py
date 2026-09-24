@@ -60,6 +60,7 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
 
         pipe = Pipeline(db, Jev(api_key="kaggle"), engine=None)
         pipe.kaggle = runner_factory(db, log=pipe.log)
+        pipe.rescore()                    # cards follow your latest profile/settings (and card format) — no model calls
         code, started = 0, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")  # UTC, see _due
         stats = {}
         try:

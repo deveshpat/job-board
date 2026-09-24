@@ -112,6 +112,8 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
     confidence = sum(confs) / len(confs)
     matched = [s for i, s in enumerate(skills) if a.get(f"has_{i}", {}).get("noul", 0) >= Q.SKILL_MATCH_MIN]
     missing = [s for i, s in enumerate(gaps) if a.get(f"gap_{i}", {}).get("noul", 0) >= Q.SKILL_MATCH_MIN]
+    rank = {k["name"]: (k.get("core", False), k.get("used") or 0, k.get("market") or 0) for k in profile.get("keywords") or []}
+    matched.sort(key=lambda s: rank.get(s, (False, 0, 0)), reverse=True)       # your core skills first
     lead = a.get("lead_project", {}).get("choice")
 
     loc_label = {"remote_open": f"Remote · open to {country}", "local_office": f"Office in {country}",
@@ -125,19 +127,69 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
         f"Verdict: {'worth applying' if comp['should_apply'] >= 0.5 else 'long shot'} ({comp['should_apply']:.0%})",
     ]
     tier = "strong" if match >= 75 else "good" if match >= 60 else "stretch"
+    mode = MODE_LABEL[a["work_mode"]["choice"]]
+    chips = [loc_label,
+             mode if mode and not loc_label.startswith(mode) else "",          # "Remote · open to India" says it already
+             LEVEL_LABEL[a["level"]["choice"]],
+             EXPERIENCE_LABEL[a["experience"]["choice"]] if a["experience"]["choice"] != "not_stated" else "",
+             EMPLOYMENT_LABEL[a["employment"]["choice"]] if a["employment"]["choice"] != "full_time" else "",
+             DEGREE_LABEL[deg["choice"]] if deg["choice"] in ("cs_engineering_degree", "advanced_degree") else ""]
     return {
         "match": round(match), "tier": tier, "confidence": round(confidence, 3),
         "unsure": confidence < Q.LOW_CONFIDENCE,
-        "chips": [c for c in (loc_label, MODE_LABEL[a["work_mode"]["choice"]],
-                              LEVEL_LABEL[a["level"]["choice"]], EXPERIENCE_LABEL[a["experience"]["choice"]],
-                              EMPLOYMENT_LABEL[a["employment"]["choice"]], DEGREE_LABEL[deg["choice"]]) if c],
+        "chips": [c for c in chips if c],
         "location_ok": loc["choice"] in ("remote_open", "local_office"),
         "skills_matched": matched, "skills_gap": missing,
         "lead_project": None if lead in (None, "none") else lead,
+        "take": kev_take(a, comp, cand_level, loc["choice"], loc_label, matched, missing, confidence),
         "reasons": reasons, "gates": gates,
         "components": {k: round(v, 3) for k, v in comp.items()},
         "scored_by": "jev",
     }
+
+
+def _list(xs: List[str], n: int = 4) -> str:
+    return ", ".join(xs[:n]) + (f" +{len(xs) - n}" if len(xs) > n else "")
+
+
+def kev_take(a: dict, comp: dict, cand_level: str, loc_choice: str, loc_label: str,
+             matched: List[str], missing: List[str], confidence: float) -> dict:
+    """Kev's answers as a short verdict plus the few points that matter — no probabilities or rubric text."""
+    pros, cons = [], []
+    sk = comp["skill_alignment"]
+    if sk >= 0.7:
+        pros.append(f"Strong skill overlap{': ' + _list(matched) if matched else ''}")
+    elif sk >= 0.45:
+        pros.append(f"Some skill overlap{': ' + _list(matched) if matched else ''}")
+    else:
+        cons.append("Few of your skills are what they need")
+    if missing:
+        cons.append(f"They also want {_list(missing, 3)}")
+    if comp["interest_alignment"] >= 0.8:
+        pros.append("The kind of role you're after")
+    elif comp["interest_alignment"] < 0.5:
+        cons.append("Off your stated goal")
+    if loc_choice == "restricted":                     # a good location is already the first chip
+        cons.append("Probably limited to other countries — check before applying")
+    else:
+        cons.append("Location unclear — check before applying")
+    job_level = a["level"]["choice"]
+    if comp["level_fit"] >= 0.75:
+        pros.append(f"Right level ({LEVEL_LABEL[job_level].lower()})")
+    elif comp["level_fit"] < 0.6:
+        cons.append(f"Pitched at {LEVEL_LABEL[job_level].lower()} — a stretch from {LEVEL_LABEL.get(cand_level, cand_level).lower()}")
+    if comp["experience_fit"] < 0.6 and a["experience"]["choice"] != "not_stated":
+        cons.append(f"Asks for {EXPERIENCE_LABEL[a['experience']['choice']]} of experience")
+    if a["degree"]["probabilities"].get("advanced_degree", 0) > 0.5:
+        cons.append("Wants a Master's or PhD")
+    if a["red_flags"]["noul"] > 0.3:
+        cons.append("Some red flags in the posting")
+    sa = comp["should_apply"]
+    verdict = "Worth applying" if sa >= 0.75 else "Worth a look" if sa >= 0.5 else "Long shot"
+    lead = pros[0].split(":")[0].lower() if pros else ""
+    summary = verdict + (f" — {lead}" if lead else "") + (f", but {cons[0][0].lower() + cons[0][1:]}" if cons and sa < 0.75 else "")
+    return {"verdict": verdict, "summary": summary + ".", "pros": pros[:4], "cons": cons[:3],
+            "unsure": confidence < Q.LOW_CONFIDENCE}
 
 
 def heuristic_card(job: dict, profile: dict, skills: List[str], min_match: float) -> dict:

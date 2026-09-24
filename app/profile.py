@@ -154,6 +154,8 @@ def extract_header(text: str) -> dict:
     name = lines[0] if lines else ""
     email = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text)
     loc = re.search(r"([A-Z][a-zA-Z .]+,\s*[A-Z][a-zA-Z ]+)\s*(\||\n|·)", text[:600])
+    if not loc:   # a single place on the contact line, e.g. "India |"
+        loc = next((m for l in lines[1:8] for m in [re.match(r"^([A-Z][A-Za-z .'-]{1,40}?)\s*[|·]\s*$", l)] if m), None)
     headline = lines[1] if len(lines) > 1 and len(lines[1]) < 120 else ""
     goal = re.search(r"(Looking for[^.]+\.)", text)
     summary = next((l for l in lines[2:8] if len(l) > 150), "")
@@ -175,7 +177,7 @@ def _top(ans: dict) -> str:
     return ans["choice"]
 
 
-def build_profile(resume_path: Path, jev: Optional[Jev]) -> dict:
+def build_profile(resume_path: Path, jev: Optional[Jev], display_name: str = "") -> dict:
     raw = resume_path.read_text(errors="ignore") if resume_path.suffix.lower() == ".tex" else ""
     text = extract_text(resume_path)
     header = extract_header(text)
@@ -184,7 +186,7 @@ def build_profile(resume_path: Path, jev: Optional[Jev]) -> dict:
 
     profile = {
         **header,
-        "resume_file": resume_path.name,
+        "resume_file": display_name or resume_path.name,
         "resume_text": text,
         "projects": projects,
         "scored_by": "heuristic",
@@ -232,6 +234,51 @@ def build_profile(resume_path: Path, jev: Optional[Jev]) -> dict:
         for t in profile["search_terms"][:5]:
             t["keep"] = True
     return profile
+
+
+# Fields you can edit on the Profile page; a rebuild keeps your edits (profile["overrides"]).
+EDITABLE = ("name", "headline", "location", "email", "goal", "level", "country")
+
+
+def carry_overrides(old: Optional[dict], new: dict) -> dict:
+    """After Kev re-reads the resume: keep what you set by hand — edited fields, skills and roles you
+    switched on/off, and ones you added yourself."""
+    if not old:
+        return new
+    legacy = "overrides" not in old        # made before edits were tracked: treat its picks as yours
+    ov = dict(old.get("overrides") or {})
+    new.update(ov)
+    new["overrides"] = ov
+    for key in ("keywords", "search_terms"):
+        mine = {x["name"].lower(): x for x in old.get(key) or []}
+        have = {x["name"].lower() for x in new.get(key) or []}
+        for x in new.get(key) or []:
+            o = mine.get(x["name"].lower())
+            if o and (o.get("user_set") or legacy):
+                x["keep"], x["user_set"] = o["keep"], True
+        added = [o for o in old.get(key) or [] if (o.get("added") or (legacy and o.get("p" if key == "search_terms" else "used", 0) is None))
+                 and o["name"].lower() not in have]
+        new[key] = added + (new.get(key) or [])
+    return new
+
+
+def refresh_profile(old: Optional[dict], resume_path: Path, rev: str = "", display_name: str = "") -> dict:
+    """A quick update without Kev (e.g. on GitHub, or while the engine is off): re-read the facts from the
+    resume — header, summary, projects, skills — but keep Kev's earlier judgments (level, field, roles).
+    New skills are kept until Kev looks at them."""
+    fresh = build_profile(resume_path, None, display_name)
+    fresh["resume_rev"] = rev
+    if not old or old.get("scored_by") != "jev":
+        return carry_overrides(old, fresh)
+    new = dict(old)
+    for k in ("name", "email", "location", "headline", "goal", "summary", "resume_text", "projects", "resume_file"):
+        new[k] = fresh[k]
+    names = {k["name"].lower() for k in fresh["keywords"]}
+    known = {k["name"].lower() for k in old.get("keywords") or []}
+    new["keywords"] = ([k for k in old.get("keywords") or [] if k["name"].lower() in names or k.get("added")]
+                       + [{**k, "keep": True, "core": False} for k in fresh["keywords"] if k["name"].lower() not in known])
+    new["resume_rev"] = rev
+    return carry_overrides(old, new)
 
 
 def compact_candidate(profile: dict) -> dict:
