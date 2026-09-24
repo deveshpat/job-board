@@ -1,9 +1,10 @@
 """What a job pays, and what to ask for — shown on every card.
 
 If the posting lists pay, that range is used (and the ask sits inside it). If not, the estimate comes from
-typical bands for someone based in your country at the role's level: remote for a foreign company, or an
-office/remote role in India. These bands are rough market figures (2025–26), labelled as estimates on the
-card; the ask leans lower when the role is above your level and higher when it's below.
+typical bands for someone in your country at the role's level: your country's local market where we have one,
+or — for countries without local bands, working remotely for a foreign company — typical location-adjusted
+remote pay. These are rough market figures (2025–26), always labelled as estimates on the card. The ask
+leans lower when the role is above your level and higher when it's below.
 """
 from __future__ import annotations
 
@@ -11,14 +12,24 @@ import re
 from typing import Optional
 
 LEVELS = ["internship", "entry", "mid", "senior", "staff_plus"]
+EU = {"Germany", "France", "Netherlands", "Spain", "Poland", "Portugal", "Ireland", "Italy"}
 # annual, except internships (monthly)
 BANDS = {
-    # foreign companies hiring remotely in India mostly pay location-adjusted rates, well under their home bands
-    "foreign": {"currency": "USD", "internship": (600, 1500), "entry": (25_000, 40_000), "mid": (35_000, 55_000),
-                "senior": (55_000, 85_000), "staff_plus": (80_000, 120_000)},
-    "india": {"currency": "INR", "internship": (25_000, 60_000), "entry": (800_000, 1_600_000), "mid": (1_600_000, 3_000_000),
+    # remote for a foreign company from a lower-cost country: location-adjusted, well under home-market bands
+    "remote": {"currency": "USD", "internship": (600, 1500), "entry": (25_000, 40_000), "mid": (35_000, 55_000),
+               "senior": (55_000, 85_000), "staff_plus": (80_000, 120_000)},
+    "India": {"currency": "INR", "internship": (25_000, 60_000), "entry": (800_000, 1_600_000), "mid": (1_600_000, 3_000_000),
               "senior": (3_000_000, 5_500_000), "staff_plus": (5_500_000, 9_000_000)},
+    "United States": {"currency": "USD", "internship": (4_000, 8_000), "entry": (90_000, 130_000), "mid": (130_000, 180_000),
+                      "senior": (170_000, 240_000), "staff_plus": (220_000, 320_000)},
+    "United Kingdom": {"currency": "GBP", "internship": (2_000, 3_000), "entry": (35_000, 55_000), "mid": (55_000, 80_000),
+                       "senior": (80_000, 110_000), "staff_plus": (100_000, 150_000)},
+    "Canada": {"currency": "CAD", "internship": (4_000, 6_000), "entry": (80_000, 110_000), "mid": (110_000, 150_000),
+               "senior": (140_000, 190_000), "staff_plus": (180_000, 250_000)},
+    "EU": {"currency": "EUR", "internship": (1_200, 2_500), "entry": (45_000, 60_000), "mid": (60_000, 80_000),
+           "senior": (75_000, 100_000), "staff_plus": (95_000, 130_000)},
 }
+HIGH_COST = {"United States", "United Kingdom", "Canada", "EU"}      # remote work there pays like the local market
 FX = {"USD": 1.0, "EUR": 0.92, "GBP": 0.79}          # to show a foreign estimate in the employer's currency
 SYMBOL = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "CAD": "CA$", "AUD": "A$"}
 _CUR = [("₹", "INR"), ("inr", "INR"), ("lpa", "INR"), ("lakh", "INR"), ("€", "EUR"), ("eur", "EUR"), ("£", "GBP"), ("gbp", "GBP"),
@@ -110,30 +121,35 @@ def _nice(v: float, cur: str, period: str) -> float:
     return round(v / step) * step
 
 
-def suggest(job: dict, job_level: str, cand_level: str, where: str) -> Optional[dict]:
-    """where: 'india' (your country) or 'foreign' (a foreign employer, remote)."""
+def suggest(job: dict, job_level: str, cand_level: str, country: str, local: bool = False) -> Optional[dict]:
+    """country: where you are. local: the job is in your country (an office there, or listed there)."""
     li, ci = LEVELS.index(job_level) if job_level in LEVELS else 1, LEVELS.index(cand_level) if cand_level in LEVELS else 1
     lean = 0.3 if li > ci else 0.45 if li == ci else 0.65                     # where in the range to ask
     listed = parse_listed(f"{job.get('salary') or ''}\n{job.get('title') or ''}\n{job.get('description') or ''}")
+    home = "EU" if country in EU else country
     if listed:
         c, p = listed["currency"], listed["period"]
         ask = _nice(listed["low"] + lean * (listed["high"] - listed["low"]), c, p)
-        abroad = where == "foreign" and c != "INR"
+        abroad = not local and home not in HIGH_COST and c != BANDS.get(home, {}).get("currency")
         return {"listed": True, "range": fmt_range(listed["low"], listed["high"], c, p), "ask": fmt(ask, c, p), "period": p,
                 "abroad": abroad,
-                "basis": "their range may be for hires in their own country — if they pay by location, expect less from India"
+                "basis": f"their range may be for hires in their own country — if they pay by location, expect less from {country or 'where you are'}"
                          if abroad else "from the posting"}
-    band = BANDS[where]
+    if home in BANDS and (local or home in HIGH_COST):
+        band, basis = BANDS[home], f"typical for this level in {country}"
+    elif not local:
+        band, basis = BANDS["remote"], f"typical for this level, remote from {country or 'your country'}"
+    else:
+        return None                                                               # no local figures for this country
     lo, hi = band[job_level if job_level in band else "entry"]
     cur, p = band["currency"], ("month" if job_level == "internship" else "year")
-    text = f"{job.get('location') or ''} {job.get('description') or ''}"[:4000]
-    if where == "foreign" and re.search(r"€|\beur\b|\b(europe|eu|germany|france|spain|netherlands|poland|romania|portugal|italy|ireland)\b", text, re.I):
-        cur = "EUR"
-    elif where == "foreign" and re.search(r"£|\b(uk|united kingdom|london)\b", text, re.I):
-        cur = "GBP"
-    fx = FX.get(cur, 1.0)
-    lo, hi = lo * fx, hi * fx
+    if band is BANDS["remote"]:                                                   # show it in the employer's currency
+        text = f"{job.get('location') or ''} {job.get('description') or ''}"[:4000]
+        if re.search(r"€|\beur\b|\b(europe|eu|germany|france|spain|netherlands|poland|romania|portugal|italy|ireland)\b", text, re.I):
+            cur = "EUR"
+        elif re.search(r"£|\b(uk|united kingdom|london)\b", text, re.I):
+            cur = "GBP"
+        lo, hi = lo * FX.get(cur, 1.0), hi * FX.get(cur, 1.0)
     ask = _nice(lo + lean * (hi - lo), cur, p)
     return {"listed": False, "range": fmt_range(_nice(lo, cur, p), _nice(hi, cur, p), cur, p),
-            "ask": fmt(ask, cur, p), "period": p,
-            "basis": "typical for this level, remote from India" if where == "foreign" else "typical for this level in India"}
+            "ask": fmt(ask, cur, p), "period": p, "basis": basis}

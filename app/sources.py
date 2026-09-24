@@ -20,7 +20,14 @@ from typing import Callable, Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup
 
-UA = {"User-Agent": "Mozilla/5.0 (personal job-board; contact: local) JobBoard/1.0"}
+UA = {"User-Agent": "JobBoard/1.0 (personal, self-hosted job board; +https://github.com/deveshpat/job-board)"}
+# Where each source's jobs come from — cards link "via <source>" here (attribution the sources ask for).
+SOURCE_HOME = {"remotive": "https://remotive.com", "himalayas": "https://himalayas.app", "jobicy": "https://jobicy.com",
+               "weworkremotely": "https://weworkremotely.com", "arbeitnow": "https://www.arbeitnow.com",
+               "hackernews": "https://news.ycombinator.com", "greenhouse": "https://www.greenhouse.com",
+               "ashby": "https://www.ashbyhq.com", "lever": "https://www.lever.co"}
+# We Work Remotely's API terms are stricter than its RSS page, so it's opt-in for new boards.
+OPT_IN_SOURCES = {"weworkremotely"}
 TIMEOUT = 25
 
 DEFAULT_COMPANIES = {
@@ -109,9 +116,11 @@ def _get(session: requests.Session, url: str, **params):
 # ---------------------------------------------------------------------------
 
 def remotive(s, terms, companies, log):
+    """One unfiltered call per run (Remotive allows ~2 requests/minute and suggests ≤4 fetches a day);
+    title triage filters the feed."""
     out = []
-    for t in terms:
-        for j in _get(s, "https://remotive.com/api/remote-jobs", search=t, limit=100).json().get("jobs", []):
+    for t in [None]:
+        for j in _get(s, "https://remotive.com/api/remote-jobs").json().get("jobs", []):
             out.append(_job("remotive", j["id"], title=j["title"], company=j["company_name"],
                             location=j.get("candidate_required_location", ""), remote=True, url=j["url"],
                             description=html_to_text(j.get("description")), salary=j.get("salary") or "",
@@ -124,12 +133,8 @@ def remotive(s, terms, companies, log):
 def himalayas(s, terms, companies, log, pages=3):
     out = []
     for t in terms:
-        cursor = None
-        for _ in range(pages):
-            params = {"q": t, "limit": 20}
-            if cursor:
-                params["cursor"] = cursor
-            d = _get(s, "https://himalayas.app/jobs/api/search", **params).json()
+        for page in range(1, pages + 1):                 # the search endpoint pages with ?page= (no cursor)
+            d = _get(s, "https://himalayas.app/jobs/api/search", q=t, page=page).json()
             for j in d.get("jobs", []):
                 restr = ", ".join(j.get("locationRestrictions") or []) or "Worldwide"
                 sal = ""
@@ -141,8 +146,7 @@ def himalayas(s, terms, companies, log, pages=3):
                                 posted_at=_iso(j.get("pubDate")), tags=j.get("categories") or [],
                                 employment_type=j.get("employmentType", ""), logo=j.get("companyLogo") or "",
                                 location_restrictions=restr))
-            cursor = d.get("nextCursor")
-            if not cursor:
+            if len(d.get("jobs", [])) < 20:
                 break
     return out
 

@@ -20,11 +20,11 @@ from .kaggle import KAGGLE_KEV_RUN, KEV_COMMIT, KaggleError, KaggleRunner
 from .lang import detect as detect_language
 from .pay import suggest as suggest_pay
 from .profile import compact_candidate, default_languages
-from .sources import DEFAULT_COMPANIES, SOURCES, fetch_all
+from .sources import DEFAULT_COMPANIES, OPT_IN_SOURCES, SOURCES, fetch_all
 from .urls import norm_url as _norm_url
 
 DEFAULT_SETTINGS = {
-    "sources": list(SOURCES),
+    "sources": [x for x in SOURCES if x not in OPT_IN_SOURCES],
     "companies": DEFAULT_COMPANIES,
     "min_match": Q.DEFAULT_MIN_MATCH,
     "max_age_days": 45,
@@ -33,7 +33,8 @@ DEFAULT_SETTINGS = {
     "engine_mode": "local",   # "kaggle": decisions run on Kaggle (GPU → CPU), falling back to local Kev
     "workers": 8,
 }
-DESC_CHARS = 9000             # keep state lean: Jev accuracy drops with irrelevant bulk
+DESC_CHARS = 9000
+KAGGLE_ONLY = "kaggle"        # engine "key" meaning: no hosted Jev — run decisions on Kaggle (scripts/ci_run.py)             # keep state lean: Jev accuracy drops with irrelevant bulk
 
 LEVEL_LABEL = {"internship": "Internship", "entry": "Entry level", "mid": "Mid level",
                "senior": "Senior", "staff_plus": "Staff+ / Manager"}
@@ -71,7 +72,19 @@ def job_state(job: dict) -> dict:
 
 # Where a posting says it is, checked against where you are — a plain-text sanity check on Kev's location call.
 CITIES = {"India": r"india|bengaluru|bangalore|mumbai|delhi|gurugram|gurgaon|noida|hyderabad|pune|chennai|kolkata|"
-                   r"ahmedabad|jaipur|chandigarh|kochi|indore|coimbatore|thiruvananthapuram|dehradun"}
+                   r"ahmedabad|jaipur|chandigarh|kochi|indore|coimbatore|thiruvananthapuram|dehradun",
+          "United States": r"usa|u\.s\.|united states|new york|nyc|san francisco|sf bay|seattle|austin|boston|chicago|los angeles|denver",
+          "United Kingdom": r"uk|united kingdom|london|manchester|edinburgh|cambridge|bristol",
+          "Germany": r"germany|deutschland|berlin|munich|münchen|hamburg|frankfurt|cologne|köln|stuttgart",
+          "France": r"france|paris|lyon|lille|toulouse|marseille",
+          "Netherlands": r"netherlands|amsterdam|rotterdam|utrecht|eindhoven",
+          "Spain": r"spain|madrid|barcelona|valencia",
+          "Canada": r"canada|toronto|vancouver|montreal|ottawa|waterloo",
+          "Poland": r"poland|warsaw|kraków|krakow|wrocław|wroclaw",
+          "Brazil": r"brazil|brasil|são paulo|sao paulo|rio de janeiro",
+          "Singapore": r"singapore",
+          "Australia": r"australia|sydney|melbourne|brisbane",
+          "United Arab Emirates": r"uae|united arab emirates|dubai|abu dhabi"}
 ANYWHERE = re.compile(r"\b(anywhere|worldwide|global(ly)?|any location|all locations|remote[- ]first|fully distributed)\b", re.I)
 ELSEWHERE = re.compile(r"\b(usa?|u\.s\.a?\.?|united states|canada|uk|united kingdom|europe|eu|emea|germany|france|spain|poland|"
                        r"netherlands|ireland|portugal|brazil|mexico|latam|north america|americas|australia|singapore|japan|"
@@ -181,8 +194,8 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
         "unsure": confidence < Q.LOW_CONFIDENCE,
         "chips": list(dict.fromkeys(c for c in chips if c)),          # "Internship" can be both level and job type
         "location_ok": loc_choice in ("remote_open", "local_office") and listed != "elsewhere",
-        "pay": suggest_pay(job, a["level"]["choice"], cand_level,
-                           "india" if listed == "yours" or loc_choice == "local_office" else "foreign") if job else None,
+        "pay": suggest_pay(job, a["level"]["choice"], cand_level, profile.get("country") or "",
+                           local=listed == "yours" or loc_choice == "local_office") if job else None,
         "skills_matched": matched, "skills_gap": missing,
         "lead_project": None if lead in (None, "none") else lead,
         "take": kev_take(a, comp, cand_level, loc_choice, loc_label, matched, missing, confidence,
@@ -383,7 +396,7 @@ class Pipeline:
 
         args = (profile, candidate, skills, cfg)
         # 1. Hosted Jev (TypeSafe): fastest and most accurate (bench/results/report.md). Kev on Kaggle if it fails.
-        if use_jev and not self.jev.is_local:
+        if use_jev and not self.jev.is_local and self.jev.api_key != KAGGLE_ONLY:
             try:
                 return self._run_local(to_triage, raw, profile, candidate, skills, cfg, terms, use_jev, reevaluate,
                                        len(jobs), len(fresh))

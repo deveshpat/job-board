@@ -36,12 +36,13 @@ from .kaggle import Accounts, KaggleCLI  # noqa: E402
 from .sync import Sync  # noqa: E402
 from .jev import Jev, JevError  # noqa: E402
 from .pipeline import Pipeline  # noqa: E402
-from .profile import EDITABLE, build_profile, carry_overrides, refresh_profile  # noqa: E402
+from .profile import EDITABLE, build_profile, carry_overrides, default_languages, refresh_profile  # noqa: E402
 from .resume import CompileError, ResumeStore, compile_tex  # noqa: E402
 from .urls import from_page, from_url  # noqa: E402
 
-DEFAULT_RESUME = Path(os.environ.get("RESUME_PATH", ROOT.parent / "Devesh_Patel_Resume.tex"))
-AVATAR = Path(os.environ.get("AVATAR_PATH", ROOT.parent / "DP.jpeg"))
+# Optional: a resume file / photo to adopt on first start (and keep in sync with the in-app editor).
+DEFAULT_RESUME = Path(os.environ["RESUME_PATH"]) if os.environ.get("RESUME_PATH") else None
+AVATAR = Path(os.environ["AVATAR_PATH"]) if os.environ.get("AVATAR_PATH") else None
 
 ENGINE_LABEL = os.environ.get("ENGINE_LABEL") or ("Local engine" if "127.0.0.1" in os.environ.get("JEV_BASE_URL", "") else "Jev")
 
@@ -108,7 +109,7 @@ def rebuild_profile() -> None:
 
 def _adopt_existing_files() -> None:
     """First start with this version: take over the resume file and photo you already had."""
-    if not resumes.get():
+    if not resumes.get() and DEFAULT_RESUME:
         res = resumes.import_file(DEFAULT_RESUME)
         p = db.get("profile")
         if p and res and not p.get("resume_rev"):
@@ -116,7 +117,7 @@ def _adopt_existing_files() -> None:
             p.setdefault("overrides", {})
             db.put("profile", p)
             db.touch("profile")
-    if not db.get("photo") and AVATAR.exists():
+    if not db.get("photo") and AVATAR and AVATAR.exists():
         import base64
         mime = "image/png" if AVATAR.suffix.lower() == ".png" else "image/jpeg"
         db.put("photo", f"data:{mime};base64,{base64.b64encode(AVATAR.read_bytes()).decode()}")
@@ -242,6 +243,11 @@ def index():
     return FileResponse(WEB / "index.html")
 
 
+@app.get("/setup.html")
+def setup_page():
+    return FileResponse(WEB / "setup.html")
+
+
 @app.get("/api/photo")
 @app.get("/api/avatar")
 def photo():
@@ -287,6 +293,7 @@ def _public_profile(p: Optional[dict]) -> Optional[dict]:
     import hashlib
     photo = db.get("photo")
     res = resumes.public()
+    p = {**p, "languages": p.get("languages") or default_languages(p.get("country", ""))}
     return {k: v for k, v in p.items() if k != "resume_text"} | {
         "field_labels": Q.FIELDS, "level_labels": Q.LEVELS, "countries": Q.COUNTRIES,
         "photo_url": f"/api/photo?v={hashlib.sha1(photo.encode()).hexdigest()[:8]}" if photo else None,

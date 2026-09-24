@@ -255,6 +255,13 @@ document.addEventListener("toggle", (e) => {
   try { localStorage.setItem("gut-open", e.target.open ? "1" : "0"); } catch (_) { /* storage off */ }
 }, true);
 
+// Attribution the sources ask for: "via <source>" links to the source (app/sources.py SOURCE_HOME).
+const SOURCE_HOME = { remotive: "https://remotive.com", himalayas: "https://himalayas.app", jobicy: "https://jobicy.com",
+  weworkremotely: "https://weworkremotely.com", arbeitnow: "https://www.arbeitnow.com", hackernews: "https://news.ycombinator.com",
+  greenhouse: "https://www.greenhouse.com", ashby: "https://www.ashbyhq.com", lever: "https://www.lever.co" };
+const SOURCE_NAME = { remotive: "Remotive", himalayas: "Himalayas", jobicy: "Jobicy", weworkremotely: "We Work Remotely",
+  arbeitnow: "Arbeitnow", hackernews: "Hacker News", greenhouse: "Greenhouse", ashby: "Ashby", lever: "Lever" };
+
 // What to ask for: from the posting's own range when it has one, otherwise a clearly-labelled estimate.
 const payLine = (p) => !p ? "" : `<div class="pay-line" title="${esc(p.basis)}"><span class="pay-ico" aria-hidden="true">💰</span>
   <span>Ask for <b>${esc(p.ask)}</b>${p.period === "month" ? "" : "/yr"}</span>
@@ -300,7 +307,7 @@ function cardHTML(j) {
         <div class="jd">${jdq.html || `<p class="faint">${esc(j.description || "No description provided.")}</p>`}</div></details></div>
     </div>
     <div class="jc-foot">
-      <span class="src">via ${esc(j.source)}</span>
+      <span class="src">via <a href="${esc(SOURCE_HOME[j.source] || j.url)}" target="_blank" rel="noopener">${esc(SOURCE_NAME[j.source] || j.source)}</a></span>
       <a class="btn small primary" href="${esc(j.url)}" target="_blank" rel="noopener">Open posting ${ICON.ext.replace("<svg", '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"')}</a>
     </div>`;
 }
@@ -483,8 +490,8 @@ async function renderProfile() {
             `<option value="${k}" ${k === profile.level ? "selected" : ""}>${v}</option>`).join("")}</select></label>
           <label>Based in<select class="input" data-f="country">${[...new Set([...(profile.countries || []), profile.country].filter(Boolean))].map((c) =>
             `<option ${c === profile.country ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
-          <label class="span2">Languages you work in<input class="input" data-f="languages" placeholder="English, Hindi"
-            value="${esc((profile.languages || (profile.country === "India" ? ["English", "Hindi"] : ["English"])).join(", "))}"></label>
+          <label class="span2">Languages you work in<input class="input" data-f="languages" placeholder="e.g. English, Spanish"
+            value="${esc((profile.languages || ["English"]).join(", "))}"></label>
         </div>
         ${reads ? `<p class="faint small">We read you as <b>${esc(reads)}</b>. Every job is matched against this, your skills and your resume.</p>` : ""}
       </section>
@@ -603,9 +610,11 @@ async function renderOnboarding() {
     <h2>${busy ? "Reading your resume…" : "Start with your resume"}</h2>
     <p>${busy ? "Picking your skills, level and the roles to search for. This takes a minute or two."
       : `Upload it as LaTeX (.tex — you can edit and rebuild it here) or PDF — or build one here. We read it and pick your skills, level and the roles to search for.`}</p>
-    ${busy ? '<div class="spin big"></div>' : `<label class="btn primary">Upload resume<input type="file" id="r-upload" accept=".tex,.pdf" hidden></label>`}
+    ${busy ? '<div class="spin big"></div>' : `<div class="onboard-actions"><label class="btn primary">Upload resume<input type="file" id="r-upload" accept=".tex,.pdf" hidden></label>
+      <button class="btn" id="r-build">Build one here</button></div>`}
   </div>`;
   $("#r-upload")?.addEventListener("change", (e) => e.target.files[0] && uploadResume(e.target.files[0]));
+  $("#r-build")?.addEventListener("click", () => openEditor({ mode: "visual" }));
   if (busy) profileTimer = setTimeout(() => refreshStatus().then(() => location.hash.startsWith("#/profile") && renderProfile()), 3000);
 }
 
@@ -875,11 +884,16 @@ async function renderSettings() {
       <summary>Advanced</summary>
       <p class="faint small">These tune themselves; change them only if you have a reason.</p>
       <h4>Job sources</h4>
-      <div class="checks" id="s-sources">${SOURCES.map((s) => `<label><input type="checkbox" value="${s}" ${settings.sources.includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</div>
+      <div class="checks" id="s-sources">${SOURCES.map((s) => `<label><input type="checkbox" value="${s}" ${settings.sources.includes(s) ? "checked" : ""}> ${SOURCE_NAME[s] || s}</label>`).join("")}</div>
+      <p class="faint small">We Work Remotely is off by default for new boards: its API terms are stricter than its public feed.</p>
       <div class="range-row"><label for="s-age">Ignore postings older than (days)</label><input type="range" id="s-age" min="7" max="120" step="1" value="${settings.max_age_days}"><b id="s-age-v">${settings.max_age_days}</b></div>
       <div class="range-row"><label for="s-deep">Most jobs to read in depth per run</label><input type="range" id="s-deep" min="25" max="1000" step="25" value="${settings.max_deep}"><b id="s-deep-v">${settings.max_deep}</b></div>
       <label class="checks" style="margin-top:8px"><label><input type="checkbox" id="reeval"> Next manual run: re-read jobs already on the board</label></label>
     </details>
+    <p class="faint small attribution">Job data from ${Object.keys(SOURCE_HOME).filter((k) => !["greenhouse", "ashby", "lever"].includes(k))
+      .map((k) => `<a href="${SOURCE_HOME[k]}" target="_blank" rel="noopener">${SOURCE_NAME[k]}</a>`).join(", ")}, and companies' own job boards
+      on <a href="${SOURCE_HOME.greenhouse}" target="_blank" rel="noopener">Greenhouse</a>, <a href="${SOURCE_HOME.ashby}" target="_blank" rel="noopener">Ashby</a>
+      and <a href="${SOURCE_HOME.lever}" target="_blank" rel="noopener">Lever</a>. Every job links to its original posting.</p>
   </div>`;
 
   const minEl = $("#s-min");
@@ -1053,6 +1067,9 @@ function renderSync() {
       <div class="add-row" style="margin:0"><input class="input" type="password" id="s-token" placeholder="${st.token ? "•••• saved (type to replace)" : "fine-grained token for this repo"}" autocomplete="off">
       <button class="btn" id="s-token-save">Save</button></div></div>
     <p class="faint" style="font-size:12.5px">Token permissions (this repository only): Contents, Actions, Secrets — read &amp; write.</p>
+    <div class="field-row"><label>Faster screening</label>
+      <div class="add-row" style="margin:0"><input class="input" type="password" id="s-jev" placeholder="TypeSafe API key (optional — paid by you)" autocomplete="off">
+      <button class="btn" id="s-jev-save">Save</button></div></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
       ${st.passkeys ? `<button class="btn" id="s-passkey">Add a passkey on this device</button>` : ""}
       <button class="btn" id="s-backup">Download encrypted backup</button>
@@ -1060,6 +1077,11 @@ function renderSync() {
       <button class="btn" id="s-lock">Lock</button>
     </div>`;
   $("#kaggle-box").after(box);
+  $("#s-jev-save").onclick = async () => {
+    const v = $("#s-jev").value.trim(); if (!v) return;
+    try { await Static.setSecret("TYPESAFE_API_KEY", v); $("#s-jev").value = ""; toast("Saved — the next search uses it"); }
+    catch (e) { toast(e.message); }
+  };
   $("#s-token-save").onclick = async () => { await Static.setToken($("#s-token").value.trim()); toast("Token saved on this device (encrypted)"); renderSettings(); };
   $("#s-passkey")?.addEventListener("click", async () => {
     try { const n = await Static.addPasskey(navigator.platform || "device"); toast(`Passkey added (${n} total)`); }
@@ -1078,7 +1100,7 @@ async function renderKaggle(settings) {
   const rows = accts.map((a) => ({ ...a, key: "" }));
   while (rows.length < 3) rows.push({ username: "", key: "", enabled: true, key_hint: "", _new: true });
   const mode = settings.engine_mode || "local";
-  const hosted = !!status?.jev?.available && !status.jev.local && status.jev.engine !== "Kev-4B" || STATIC_MODE;
+  const hosted = !!status?.jev?.available && !status.jev.local && status.jev.engine === "Jev";
   const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
   const stateOf = (a) => {
     if (a._new || !a.key_hint) return `<span class="faint">not saved</span>`;

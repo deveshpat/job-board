@@ -469,7 +469,13 @@
     }
     let remoteError = null;
     try { await adoptRemoteToken(); await loadRemote(); }
-    catch (e) { remoteError = e; console.warn("couldn't reach GitHub — using this device's copy", e); }
+    catch (e) {
+      if (e.name === "OperationError") {                 // the repo's data was made with a different key (a new board)
+        for (const k of ["user.local", "user.dirty", "user.sha", "board.enc", "token.enc", "remembered_key", "resume_pdf.enc"]) await idb.del(k);
+        throw new Error("This device's saved key doesn't open this board — unlock it with your passphrase.");
+      }
+      remoteError = e; console.warn("couldn't reach GitHub — using this device's copy", e);
+    }
     if (!S.user) throw new Error(remoteError ? `Couldn't load your data: ${remoteError.message}`
                                              : "No data yet — publish from the Mac app first.");
     S.user.decisions ||= {}; S.user.applications ||= []; S.user.deleted_apps ||= {};
@@ -598,6 +604,11 @@
     return pdf?.bytes ? pdf : null;
   }
 
-  window.Static = { boot, api, setToken, addPasskey, lock, backup, restore, csv, resumePdf,
+  async function setSecret(name, value) {
+    if (!S.token) throw new Error("Add your GitHub token first.");
+    await GH.setSecret(name, value);
+  }
+
+  window.Static = { boot, api, setToken, addPasskey, lock, backup, restore, csv, resumePdf, setSecret,
                     state: () => ({ token: !!S.token, dirty: S.dirty, repo: S.cfg, passkeys: Vault.passkeysSupported() }) };
 })();

@@ -23,8 +23,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           mkdir -p _site/static
-          cp web/index.html _site/
-          cp web/*.js web/*.css _site/static/
+          cp web/index.html web/setup.html _site/
+          cp web/*.js web/*.css web/wordlist.txt _site/static/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

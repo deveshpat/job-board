@@ -22,7 +22,7 @@ from app import state, vault  # noqa: E402
 from app.db import DB  # noqa: E402
 from app.jev import Jev  # noqa: E402
 from app.kaggle import Accounts, KaggleError, KaggleRunner  # noqa: E402
-from app.pipeline import Pipeline  # noqa: E402
+from app.pipeline import KAGGLE_ONLY, Pipeline  # noqa: E402
 
 
 def read(key: bytes, folder: Path, name: str):
@@ -44,8 +44,8 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
         state.import_pipeline(db, read(key, args.state, "pipeline"))
         user = read(key, args.state, "user")
         if not user or not user.get("profile"):
-            print("No profile in user.enc yet — publish from the Mac app or the web app first.")
-            return 1
+            print("No profile yet — add your resume on the Profile page; searches start after that.")
+            return 4                                  # not an error: a new board waiting for its resume
         state.apply_user(db, user)
         if not args.force and not _due(db):
             print("Not due yet — nothing to do.")
@@ -63,7 +63,9 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
         jev_key = os.environ.get("TYPESAFE_API_KEY", "").strip()
         db.put("engine_label", "Jev" if jev_key else "Kev-4B")
 
-        pipe = Pipeline(db, Jev(api_key=jev_key or "kaggle"), engine=None)
+        # No TypeSafe key: Kev on Kaggle if an account is set up, else the keyword heuristic (never a failed run).
+        engine_key = jev_key or (KAGGLE_ONLY if db.get("kaggle_accounts") else None)
+        pipe = Pipeline(db, Jev(api_key=engine_key), engine=None)
         pipe.kaggle = runner_factory(db, log=pipe.log)
         pipe.rescore()                    # cards follow your latest profile/settings (and card format) — no model calls
         code, started = 0, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")  # UTC, see _due

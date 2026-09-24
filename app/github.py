@@ -131,7 +131,7 @@ class GitHub:
 
 # -- what gets published to the public repo ------------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
-PUBLISH = ["app", "web", "scripts", "tests", "kaggle_kernel", ".github", "README.md", "requirements.txt",
+PUBLISH = ["app", "web", "scripts", "tests", "kaggle_kernel", ".github", "docs", "README.md", "requirements.txt",
            "run.sh", ".env.example", ".gitignore",
            "bench/make_set.py", "bench/run.py", "bench/report.py", "bench/run_all.sh", "bench/set.json",
            "bench/gold.json", "bench/gold_raw.py", "bench/results/report.md"]

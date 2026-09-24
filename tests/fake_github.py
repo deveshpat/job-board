@@ -16,7 +16,7 @@ from fastapi.responses import PlainTextResponse, Response
 from nacl.public import PrivateKey, SealedBox
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["x-oauth-scopes"])
 
 BRANCHES = {"data": {}, "main": {}}     # branch -> {path: (sha, bytes)}
 FILES = BRANCHES["data"]
@@ -102,7 +102,9 @@ def del_secret(o: str, r: str, name: str):
 
 @app.post("/repos/{o}/{r}/actions/workflows/{wf}/dispatches")
 async def dispatch(o: str, r: str, wf: str, request: Request):
-    RUNS.insert(0, {"id": next(IDS), "status": "queued", "conclusion": None, "inputs": (await request.json()).get("inputs")})
+    done = wf == "pages.yml"                         # a Pages deploy "finishes" at once here
+    RUNS.insert(0, {"id": next(IDS), "workflow": wf, "status": "completed" if done else "queued",
+                    "conclusion": "success" if done else None, "inputs": (await request.json()).get("inputs")})
     return Response(status_code=204)
 
 
@@ -195,6 +197,39 @@ def get_ref(o: str, r: str, ref: str):
 
 
 PAGES_ALLOWED = {"ok": True}
+GENERATED = {}                                     # repos made from the template (setup page)
+
+
+@app.get("/user")
+def user():
+    return Response('{"login": "newuser"}', media_type="application/json", headers={"x-oauth-scopes": "repo, workflow"})
+
+
+@app.post("/repos/{o}/{r}/generate")
+async def generate(o: str, r: str, request: Request):
+    b = await request.json()
+    GENERATED[f"{b['owner']}/{b['name']}"] = f"{o}/{r}"
+    BRANCHES.setdefault("main", {})
+    if not BRANCHES["main"]:
+        data = b"# Job Board\n"
+        BRANCHES["main"]["README.md"] = (sha_of(data), data)
+        REFS["refs/heads/main"] = "generated"
+    return Response(status_code=201)
+
+
+@app.get("/repos/{o}/{r}")
+def repo(o: str, r: str):
+    tpl = GENERATED.get(f"{o}/{r}")
+    if not tpl:
+        raise HTTPException(404, "Not Found")
+    return {"full_name": f"{o}/{r}", "template_repository": {"full_name": tpl}}
+
+
+@app.get("/repos/{o}/{r}/branches/{b}")
+def branch(o: str, r: str, b: str):
+    if not BRANCHES.get(b):
+        raise HTTPException(404, "Branch not found")
+    return {"name": b}
 
 
 @app.post("/repos/{o}/{r}/pages")

@@ -194,7 +194,7 @@ def build_profile(resume_path: Path, jev: Optional[Jev], display_name: str = "")
         "fields": [],            # [{name, p}]
         "level": "entry",
         "level_confidence": None,
-        "country": "India" if "india" in header["location"].lower() else "",
+        "country": country_of(header["location"]),
         "search_terms": [],      # [{name, p, keep}]
     }
     profile["languages"] = default_languages(profile["country"])      # the languages you work in (editable)
@@ -241,8 +241,29 @@ def build_profile(resume_path: Path, jev: Optional[Jev], display_name: str = "")
 EDITABLE = ("name", "headline", "location", "email", "goal", "level", "country", "languages")
 
 
+LOCAL_LANGUAGE = {"India": "Hindi", "Germany": "German", "France": "French", "Spain": "Spanish", "Netherlands": "Dutch",
+                  "Poland": "Polish", "Portugal": "Portuguese", "Brazil": "Portuguese", "Mexico": "Spanish",
+                  "Argentina": "Spanish", "Japan": "Japanese", "Indonesia": "Indonesian", "Vietnam": "Vietnamese",
+                  "Pakistan": "Urdu", "Bangladesh": "Bengali", "Nepal": "Nepali", "Philippines": "Filipino"}
+
+
 def default_languages(country: str) -> list:
-    return ["English", "Hindi"] if (country or "").lower() == "india" else ["English"]
+    """English plus the country's main language; you can change this on the Profile page."""
+    local = LOCAL_LANGUAGE.get(country or "")
+    return ["English", local] if local else ["English"]
+
+
+def country_of(location: str) -> str:
+    """The country named in a resume's location line ("Pune, India", "Berlin", "India")."""
+    from .pipeline import CITIES                      # local import: pipeline imports this module
+    low = (location or "").lower()
+    for c in Q.COUNTRIES:
+        if re.search(rf"\b{re.escape(c.lower())}\b", low):
+            return c
+    for c, cities in CITIES.items():
+        if re.search(rf"\b({cities})\b", low):
+            return c
+    return ""
 
 
 def carry_overrides(old: Optional[dict], new: dict) -> dict:

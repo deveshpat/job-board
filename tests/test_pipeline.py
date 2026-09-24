@@ -705,8 +705,35 @@ def test_pay_suggestion():
     assert parse_listed("3+ years of experience in a 10 person team") is None
     assert parse_listed("We've raised $781M in funding and our last valuation was $11B") is None
     assert parse_listed("Backed by YC, $40M Series B") is None
-    p = suggest({"salary": "$150 - 210K"}, "mid", "entry", "foreign")
+    p = suggest({"salary": "$150 - 210K"}, "mid", "entry", "India")
     assert p["listed"] and p["ask"] == "$168k" and p["range"] == "$150–210k"          # above your level: lower in the range
-    p = suggest({"location": "Remote, Spain"}, "mid", "entry", "foreign")
+    p = suggest({"location": "Remote, Spain"}, "mid", "entry", "India")
     assert not p["listed"] and p["ask"].startswith("€") and "estimate" not in p["ask"]
-    assert suggest({"location": "Bengaluru"}, "entry", "entry", "india")["ask"] == "₹12 LPA"
+    assert suggest({"location": "Bengaluru"}, "entry", "entry", "India", local=True)["ask"] == "₹12 LPA"
+    assert suggest({"location": "Remote"}, "entry", "entry", "United States")["ask"].startswith("$10")   # US: local market
+    assert suggest({"location": "Berlin"}, "entry", "entry", "Germany", local=True)["ask"].startswith("€")
+    assert suggest({"location": "Lagos"}, "entry", "entry", "Nigeria", local=True) is None                # no local bands
+
+
+def test_profile_country_and_languages():
+    from app.profile import country_of, default_languages
+    assert country_of("Pune, India") == "India" and country_of("Berlin") == "Germany" and country_of("Remote") == ""
+    assert default_languages("India") == ["English", "Hindi"] and default_languages("Germany") == ["English", "German"]
+    assert default_languages("") == ["English"]
+
+
+def test_new_board_run_is_quiet(tmp_path, monkeypatch):
+    """A board made by the setup page (no resume yet, no keys) must not fail its hourly run."""
+    import importlib.util
+    from app import vault
+    spec = importlib.util.spec_from_file_location("ci2", Path(__file__).parents[1] / "scripts" / "ci_run.py")
+    ci = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ci)
+    key = vault.new_data_key()
+    st = tmp_path / "state"; st.mkdir()
+    user = {"schema": 1, "meta": {}, "profile": None, "settings": {"daily_at": "09:00"}, "decisions": {},
+            "applications": [], "deleted_apps": {}, "kaggle": [], "resume": None, "photo": None}
+    (st / "user.enc").write_bytes(vault.encrypt(key, "user", user))
+    monkeypatch.setenv("JOBBOARD_DATA_KEY", vault.b64(key))
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    assert ci.main(["--state", str(st), "--force"]) == 4

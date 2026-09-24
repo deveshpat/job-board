@@ -247,7 +247,7 @@ class KaggleRunner:
         folder.mkdir()
         (folder / "spec.json").write_text(json.dumps(spec))
         (folder / "dataset-metadata.json").write_text(json.dumps(
-            {"title": DATASET_SLUG, "id": f"{user}/{DATASET_SLUG}", "licenses": [{"name": "CC0-1.0"}]}))
+            {"title": DATASET_SLUG, "id": f"{user}/{DATASET_SLUG}", "licenses": [{"name": "other"}], "isPrivate": True}))
         exists = cli.run("datasets", "status", f"{user}/{DATASET_SLUG}").code == 0
         r = (cli.run("datasets", "version", "-p", str(folder), "-m", "job board batch", "-q", "-d", timeout=900)
              if exists else cli.run("datasets", "create", "-p", str(folder), "-q", timeout=900))
