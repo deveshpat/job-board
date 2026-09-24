@@ -66,13 +66,13 @@ async function refreshStatus() {
   // The pill only appears while something is happening (or something is wrong) — details live in Settings.
   const pill = $("#jev-pill");
   const es = status.jev.engine_state, busy = status.pipeline?.running || status.profile_job?.running;
-  const text = !status.jev.available ? "No engine"
-    : busy ? (status.pipeline?.running ? "Searching…" : `${status.jev.engine} is reading…`)
-    : es === "loading" ? `${status.jev.engine} loading…` : es === "ready" ? `${status.jev.engine} ●` : es === "error" ? `${status.jev.engine} failed` : "";
+  const text = !status.jev.available ? "Setup needed"
+    : busy ? (status.pipeline?.running ? "Searching…" : "Reading your resume…")
+    : es === "loading" ? "Warming up…" : es === "error" ? "Needs attention" : "";
   pill.hidden = !text;
   pill.textContent = text;
   pill.className = "jev-pill " + (!status.jev.available || es === "error" ? "off" : "on");
-  pill.title = status.jev.local ? "Kev runs on this Mac only while it's needed, and unloads after 5 idle minutes." : "";
+  pill.title = "";
   document.querySelectorAll(".seg button[data-mode] b").forEach((b) => (b.textContent = status.counts[b.parentElement.dataset.mode] || 0));
   const n = status.counts.new || 0;
   const b = $("#badge-new");
@@ -248,6 +248,13 @@ function jdDigest(text, have, gaps, listed = "") {
   return { html: body, quotes, minutes: Math.max(1, Math.round(words / 230)) };
 }
 
+// Jev is a "System One" model — fast, intuitive judgment — so its reasoning is a gut check. Open/closed is remembered.
+const gutOpen = () => { try { return localStorage.getItem("gut-open") === "1"; } catch (_) { return false; } };
+document.addEventListener("toggle", (e) => {
+  if (!e.target.matches?.("details.gut")) return;
+  try { localStorage.setItem("gut-open", e.target.open ? "1" : "0"); } catch (_) { /* storage off */ }
+}, true);
+
 function cardHTML(j) {
   const c = j.card || {};
   const logo = j.logo ? `<img src="${esc(j.logo)}" alt="" onerror="this.remove()">` : "";
@@ -268,16 +275,20 @@ function cardHTML(j) {
       <h2 class="jc-title">${esc(j.title)}</h2>
       <div class="jc-match">
         ${ring(c)}
-        <div><div class="verdict">${esc(tk?.verdict || tierLabel)}${c.unsure ? ' <span class="chip warn" title="Kev spread its answers across options — double-check this one">Unsure</span>' : ""}</div>
-        <div class="sub">${tk ? `${tierLabel} · ${esc(E())}'s take` : c.scored_by === "jev" ? `Scored by ${esc(E())}${conf}` : "Keyword score (no engine)"}</div></div>
+        <div><div class="verdict">${esc(tk?.verdict || tierLabel)}${c.unsure ? ' <span class="chip warn" title="The read on this one was split — double-check it">Unsure</span>' : ""}</div>
+        <div class="sub">${tk ? `${tierLabel}${tk.summary.includes("—") ? " · " + esc(tk.summary.split("—")[1].replace(/\.$/, "").trim()) : ""}` : c.scored_by === "jev" ? `Scored${conf}` : "Keyword score (no engine)"}</div></div>
       </div>
       <div class="chips">${(c.chips || []).map((x, i) => `<span class="chip ${i === 0 ? (c.location_ok ? "good" : "warn") : ""}">${esc(x)}</span>`).join("")}${j.salary ? `<span class="chip info">${esc(j.salary)}</span>` : ""}</div>
-      ${tk ? `<ul class="take">${tk.pros.map((x) => `<li class="pro">${esc(x)}</li>`).join("")}${tk.cons.map((x) => `<li class="con">${esc(x)}</li>`).join("")}</ul>` : ""}
-      ${c.lead_project ? `<div class="jc-block lead">💡 <span>Lead your application with <b>${esc(c.lead_project)}</b></span></div>` : ""}
+      ${tk ? `<details class="gut"${gutOpen() ? " open" : ""}>
+        <summary><span class="gut-ico" aria-hidden="true">⚡</span><span class="gut-t">Gut check</span>
+          <span class="gut-n">${tk.pros.length ? `<b class="p">✓ ${tk.pros.length}</b>` : ""}${tk.cons.length ? `<b class="c">! ${tk.cons.length}</b>` : ""}</span></summary>
+        <ul class="take">${tk.pros.map((x) => `<li class="pro">${esc(x)}</li>`).join("")}${tk.cons.map((x) => `<li class="con">${esc(x)}</li>`).join("")}</ul>
+        ${c.lead_project ? `<div class="jc-block lead">💡 <span>Lead your application with <b>${esc(c.lead_project)}</b></span></div>` : ""}
+        ${jdq.quotes.length ? `<div class="jc-block evidence"><h4>In their words</h4>${jdq.quotes.map((q) => `<div class="ev"><span>${q.k}</span><p>${q.html}</p></div>`).join("")}</div>` : ""}
+      </details>` : c.lead_project ? `<div class="jc-block lead">💡 <span>Lead your application with <b>${esc(c.lead_project)}</b></span></div>` : ""}
       ${tk ? "" : `<div class="jc-block"><h4>Why it was picked</h4><ul class="reasons">${(c.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
       ${c.skills_matched?.length ? `<div class="jc-block"><h4>Your matching skills</h4><div class="chips">${c.skills_matched.map((s) => `<span class="chip good">${esc(s)}</span>`).join("")}</div></div>` : ""}
       ${c.skills_gap?.length ? `<div class="jc-block"><h4>Gaps they ask for</h4><div class="chips">${c.skills_gap.map((s) => `<span class="chip bad">${esc(s)}</span>`).join("")}</div></div>` : ""}`}
-      ${jdq.quotes.length ? `<div class="jc-block evidence"><h4>In their words</h4>${jdq.quotes.map((q) => `<div class="ev"><span>${q.k}</span><p>${q.html}</p></div>`).join("")}</div>` : ""}
       <div class="jc-block"><details class="desc"><summary>Full description · ${jdq.minutes} min read</summary>
         <div class="jd-legend"><mark class="hl-have">your skills</mark><mark class="hl-gap">missing</mark><mark class="hl-exp">experience</mark><span class="hl-loc">location / visa</span><mark class="hl-pay">pay</mark></div>
         <div class="jd">${jdq.html || `<p class="faint">${esc(j.description || "No description provided.")}</p>`}</div></details></div>
@@ -295,7 +306,7 @@ function drawDeck() {
     area.innerHTML = `<div class="empty">
       <h2>${deck.mode === "later" ? "Nothing saved for later" : "You're all caught up"}</h2>
       <p>${deck.mode === "later" ? "Swipe up on a card to save it here."
-        : hasProfile ? `${esc(E())} searches for new jobs every day. Want some now?` : "Start with your resume — it's what every job is matched against."}</p>
+        : hasProfile ? "We look for new jobs every day. Want some now?" : "Start with your resume — it's what every job is matched against."}</p>
       ${deck.mode === "new" ? (hasProfile ? `<button class="btn primary" id="e-run">Find jobs now</button>` : `<a class="btn primary" href="#/profile">Add your resume</a>`) : ""}
     </div>`;
     $("#e-run")?.addEventListener("click", () => startRun());
@@ -467,14 +478,14 @@ async function renderProfile() {
           <label>Based in<select class="input" data-f="country">${[...new Set([...(profile.countries || []), profile.country].filter(Boolean))].map((c) =>
             `<option ${c === profile.country ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
         </div>
-        ${reads ? `<p class="faint small">${esc(E())} reads you as <b>${esc(reads)}</b>. Every job is matched against this, your skills and your resume.</p>` : ""}
+        ${reads ? `<p class="faint small">We read you as <b>${esc(reads)}</b>. Every job is matched against this, your skills and your resume.</p>` : ""}
       </section>
 
       <section class="card-box o-late">
-        <h3 class="section-title">Roles ${esc(E())} searches for</h3>
+        <h3 class="section-title">Roles we search for</h3>
         <div class="chips" id="p-roles">${keptRoles.map((t) => chipX(t.name, roles.indexOf(t), "role")).join("") || '<span class="faint small">None yet — add one below.</span>'}</div>
         <div class="add-row"><input class="input" id="p-role-new" placeholder="Add a role, e.g. Python Backend Developer"><button class="btn" id="p-role-add">Add</button></div>
-        ${moreRoles.length ? `<details class="more"><summary>More roles ${esc(E())} suggests (${moreRoles.length})</summary>
+        ${moreRoles.length ? `<details class="more"><summary>More roles that fit you (${moreRoles.length})</summary>
           <div class="chips">${moreRoles.map((t) => chipPlus(t.name, roles.indexOf(t), "role")).join("")}</div></details>` : ""}
       </section>
 
@@ -484,11 +495,11 @@ async function renderProfile() {
         <div class="add-row"><input class="input" id="p-skill-new" placeholder="Add a skill"><button class="btn" id="p-skill-add">Add</button></div>
         ${leftSkills.length ? `<details class="more"><summary>Left out (${leftSkills.length})</summary>
           <div class="chips">${leftSkills.map((k) => chipPlus(k.name, skills.indexOf(k), "skill")).join("")}</div></details>` : ""}
-        <p class="faint small" style="margin-bottom:0">Highlighted = skills ${esc(E())} sees you actually use in your work and projects.</p>
+        <p class="faint small" style="margin-bottom:0">Highlighted = skills you've actually used in your work and projects.</p>
       </section>
 
       ${Object.keys(profile.projects || {}).length ? `<section class="card-box o-late">
-        <h3 class="section-title">Projects ${esc(E())} can tell you to lead with</h3>
+        <h3 class="section-title">Projects to lead your applications with</h3>
         <div class="proj">${Object.entries(profile.projects).map(([n, d]) => `<div><b>${esc(n)}</b><span class="muted">${esc(d || "")}</span></div>`).join("")}</div>
       </section>` : ""}
     </div>
@@ -569,8 +580,8 @@ function resumeStatus(profile, res, job) {
   if (!res.pdf_current && res.kind === "tex")
     return line("busy", `<span class="spin"></span>${STATIC_MODE ? "Building the PDF on GitHub (about a minute)…" : "Building the PDF…"}`);
   if (profile.kev_behind)
-    return STATIC_MODE ? line("", `${esc(E())} will re-read this resume the next time the Mac app runs; the basics are already updated.`)
-      : line("", `${esc(E())} hasn't read this version yet. <button class="btn small" id="r-kev">Update profile</button>`);
+    return STATIC_MODE ? ""
+      : line("", `Your profile isn't updated from this version yet. <button class="btn small" id="r-kev">Update now</button>`);
   return "";
 }
 
@@ -578,9 +589,9 @@ async function renderOnboarding() {
   const st = status || (await api("/api/status"));
   const busy = st.profile_job?.running;
   view.innerHTML = `<div class="card-box empty onboard">
-    <h2>${busy ? `${esc(E())} is reading your resume…` : "Start with your resume"}</h2>
+    <h2>${busy ? "Reading your resume…" : "Start with your resume"}</h2>
     <p>${busy ? "Picking your skills, level and the roles to search for. This takes a minute or two."
-      : `Upload it as LaTeX (.tex — you can edit and rebuild it here) or PDF. ${esc(E())} reads it and picks your skills, level and the roles to search for.`}</p>
+      : `Upload it as LaTeX (.tex — you can edit and rebuild it here) or PDF — or build one here. We read it and pick your skills, level and the roles to search for.`}</p>
     ${busy ? '<div class="spin big"></div>' : `<label class="btn primary">Upload resume<input type="file" id="r-upload" accept=".tex,.pdf" hidden></label>`}
   </div>`;
   $("#r-upload")?.addEventListener("change", (e) => e.target.files[0] && uploadResume(e.target.files[0]));
@@ -646,107 +657,173 @@ async function downloadResume() {
   Object.assign(document.createElement("a"), { download: name, href: URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })) }).click();
 }
 
-/* ------------------------------------------------------------------ resume editor (LaTeX) */
-async function openEditor() {
-  const r = await api("/api/resume");
+/* ------------------------------------------------------------------ resume editor: visual first, LaTeX for those who want it */
+function starterModel(p) {                      // no LaTeX yet (a PDF upload, or nothing): start from the profile
+  const m = Resume.blank();
+  if (!p) return m;
+  m.header.name = esc(p.name || "");
+  m.header.headline = esc(p.headline || "");
+  const c = Object.fromEntries(m.header.contacts.map((x) => [x.kind, x]));
+  c.location.text = esc(p.location || "");
+  c.email.text = esc(p.email || "");
+  m.sections[0].text = esc(p.summary || p.goal || "");
+  const skills = (p.keywords || []).filter((k) => k.keep).map((k) => k.name);
+  if (skills.length) m.sections[1].rows = [{ label: "Skills", items: esc(skills.join(", ")) }];
+  const projects = Object.entries(p.projects || {});
+  if (projects.length) m.sections[3].entries = projects.map(([n, d]) => ({ id: Math.random().toString(36).slice(2, 9), title: esc(n), url: "",
+    desc: esc(d || ""), right: "", sub: "", subRight: "", bullets: [""] }));
+  return m;
+}
+
+async function openEditor(opts = {}) {
+  let r = null;
+  try { r = await api("/api/resume"); } catch (_) { /* no resume yet */ }
+  const fromScratch = !r || r.kind !== "tex";
+  const profile = fromScratch ? await api("/api/profile").catch(() => null) : null;
+  let model = fromScratch ? starterModel(profile) : r.model && r.model_rev === r.rev ? r.model : null;
+  if (!model && !fromScratch) { try { model = Resume.parse(r.tex); } catch (e) { console.warn(e); } }
+  const filename = fromScratch ? `${(profile?.name || "resume").replace(/\s+/g, "_")}_Resume.tex` : r.filename || "resume.tex";
+  let savedTex = fromScratch ? "" : r.tex;
+  let mode = opts.mode || (() => { try { return localStorage.getItem("resume-mode") || "visual"; } catch (_) { return "visual"; } })();
+  if (!model) mode = "latex";
   const draftKey = "resume-draft";
   let draft = null;
   try { draft = JSON.parse(localStorage.getItem(draftKey) || "null"); } catch (_) { /* storage off */ }
-  const restored = draft && draft.base === r.rev && draft.tex !== r.tex;
+  const restored = draft && draft.base === (r?.rev || "new") && (draft.tex !== savedTex);
+  if (restored) { model = draft.model || model; if (!draft.model) mode = "latex"; }
+
+  const st = () => ({ ...Resume.DEFAULT_STYLE, ...(model?.style || {}) });
+  const opt = (list, cur) => list.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${l}</option>`).join("");
   const box = document.createElement("div");
   box.className = "editor";
   box.setAttribute("role", "dialog");
   box.innerHTML = `
     <div class="ed-bar">
-      <b class="ed-name">${esc(r.filename || "resume.tex")}</b>
+      <b class="ed-name">${esc(filename)}</b>
+      <div class="seg ed-mode"><button data-mode="visual">Visual</button><button data-mode="latex">LaTeX</button></div>
+      <div class="ed-style">
+        <select class="input" data-style="font" title="Font">${opt(Resume.FONTS, st().font)}</select>
+        <select class="input" data-style="size" title="Text size">${opt([[10, "10 pt"], [11, "11 pt"], [12, "12 pt"]], st().size)}</select>
+        <select class="input" data-style="margins" title="Margins">${opt([["compact", "Tight margins"], ["normal", "Normal margins"], ["roomy", "Wide margins"]], st().margins)}</select>
+        <select class="input" data-style="headings" title="Section headings">${opt([["smallcaps", "Small caps"], ["bold", "Bold"], ["accent", "Coloured"]], st().headings)}</select>
+        <label class="ed-color" title="Link & accent colour"><input type="color" data-style="accent" value="#${st().accent}"></label>
+      </div>
       <span class="faint small ed-msg" id="ed-msg" aria-live="polite">${restored ? 'Restored your unsaved edits · <a href="#" id="ed-discard">discard</a>' : ""}</span>
-      <div class="ed-tabs seg"><button class="active" data-pane="src">LaTeX</button><button data-pane="prev">Preview</button></div>
-      ${STATIC_MODE ? "" : `<button class="btn small" id="ed-preview" title="⌘↵">Preview</button>`}
+      ${STATIC_MODE ? "" : `<button class="btn small" id="ed-pdf" title="Show the compiled PDF next to the editor">PDF</button>`}
       <button class="btn small primary" id="ed-save" title="⌘S">${STATIC_MODE ? "Save & build" : "Save"}</button>
       <button class="btn small" id="ed-close">Close</button>
     </div>
-    <div class="ed-body" data-show="src">
+    <div class="ed-body" data-mode="${mode}">
+      <div class="ed-visual"><p class="ed-tip faint small">Click any text to edit it · <kbd>Enter</kbd> adds a bullet · <kbd>⌘B</kbd> bold · <kbd>⌘I</kbd> italic · <kbd>⌘K</kbd> link · <kbd>⌘E</kbd> code · hover a section or entry to move or delete it</p><div id="ed-canvas"></div></div>
       <textarea id="ed-src" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
       <div class="ed-prev"><div id="ed-err" class="rstat bad" hidden></div><div class="pdf-view" id="ed-view"></div></div>
     </div>`;
   document.body.append(box);
   document.body.classList.add("modal-open");
-  const src = $("#ed-src", box), msg = (h) => ($("#ed-msg", box).innerHTML = h);
-  src.value = restored ? draft.tex : r.tex || "";
-  let savedText = r.tex || "";
-  const dirty = () => src.value !== savedText;
-  showResumePdf($("#ed-view", box));
+  const $b = (s) => box.querySelector(s);
+  const src = $b("#ed-src"), body = $b(".ed-body"), msg = (h) => ($b("#ed-msg").innerHTML = h);
+  let showPdf = !STATIC_MODE && window.innerWidth >= 1250;
+  const currentTex = () => (mode === "visual" ? Resume.toTex(model) : src.value);
+  const dirty = () => currentTex() !== savedTex;
+
+  const saveDraft = () => { try { localStorage.setItem(draftKey, JSON.stringify({ base: r?.rev || "new", tex: currentTex(), model: mode === "visual" ? model : null })); } catch (_) { /* */ } };
+  let previewTimer = null, previewing = false;
+  const onEdit = () => {
+    saveDraft();
+    msg(dirty() ? "Unsaved changes" : "");
+    clearTimeout(previewTimer);
+    if (showPdf) previewTimer = setTimeout(preview, 1200);
+  };
+  const vis = Resume.editor($b("#ed-canvas"), model || Resume.blank(), { onChange: (m) => { model = m; onEdit(); } });
 
   const showError = (message, log) => {
-    const e = $("#ed-err", box);
+    const e = $b("#ed-err");
     e.hidden = false;
     e.innerHTML = `LaTeX error: ${esc(message)}${log ? `<details><summary>Log</summary><pre>${esc(log)}</pre></details>` : ""}`;
     const m = /line (\d+)/.exec(message);
-    if (m) {                                             // jump to the line
+    if (m && mode === "latex") {
       const lines = src.value.split("\n"), n = Math.min(+m[1], lines.length) - 1;
       const start = lines.slice(0, n).reduce((a, l) => a + l.length + 1, 0);
       src.setSelectionRange(start, start + (lines[n] || "").length);
     }
   };
-  let previewing = false, previewTimer = null;
-  const preview = async () => {
+  async function preview() {
     if (STATIC_MODE || previewing) return;
-    previewing = true; msg("Compiling…");
+    previewing = true;
     try {
-      const resp = await fetch("api/resume/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tex: src.value }) });
-      if (resp.status === 422) { const e = await resp.json(); showError(e.detail, e.log); msg(""); }
-      else if (!resp.ok) msg(esc((await resp.json().catch(() => ({}))).detail || resp.statusText));
-      else { $("#ed-err", box).hidden = true; await renderPdf($("#ed-view", box), new Uint8Array(await resp.arrayBuffer())); msg(dirty() ? "Preview · not saved yet" : "Preview"); }
+      const resp = await fetch("api/resume/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tex: currentTex() }) });
+      if (resp.status === 422) { const e = await resp.json(); showError(e.detail, e.log); }
+      else if (resp.ok) { $b("#ed-err").hidden = true; await renderPdf($b("#ed-view"), new Uint8Array(await resp.arrayBuffer())); }
     } catch (e) { msg(esc(e.message)); }
     previewing = false;
+  }
+  const layout = () => {
+    body.dataset.mode = mode;
+    body.classList.toggle("with-pdf", showPdf || mode === "latex");
+    box.querySelectorAll(".ed-mode button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+    $b(".ed-style").hidden = mode !== "visual";
+    $b("#ed-pdf")?.classList.toggle("on", showPdf);
+    requestAnimationFrame(() => vis?.fit());
+    try { localStorage.setItem("resume-mode", mode); } catch (_) { /* */ }
+  };
+  const setMode = (next) => {
+    if (next === mode) return;
+    if (next === "latex") src.value = Resume.toTex(model);
+    else {
+      try { model = Resume.parse(src.value); vis.setModel(model); msg("Rebuilt the visual view from your LaTeX. Custom commands it can't show are replaced when you save from here."); }
+      catch (e) { return msg(`Couldn't read that LaTeX into sections: ${esc(e.message)}`); }
+    }
+    mode = next; layout();
+    if (showPdf || mode === "latex") preview();
   };
   const save = async () => {
-    const btn = $("#ed-save", box);
+    const btn = $b("#ed-save");
     btn.disabled = true; msg(STATIC_MODE ? "Saving…" : "Saving and compiling…");
+    const tex = currentTex();
     try {
-      const out = await api("/api/resume", { method: "PUT", json: { tex: src.value } });
-      savedText = src.value;
-      try { localStorage.removeItem(draftKey); } catch (_) { /* storage off */ }
+      const out = await api("/api/resume", { method: "PUT", json: { tex, filename, model: mode === "visual" ? model : null } });
+      savedTex = tex;
+      r = { ...(r || {}), ...out, kind: "tex", rev: out.rev };
+      try { localStorage.removeItem(draftKey); } catch (_) { /* */ }
       if (out.error && out.error.rev === out.rev) { showError(out.error.message); msg("Saved — but LaTeX failed, so the PDF is the previous version"); }
       else if (STATIC_MODE) msg("Saved · building the PDF on GitHub (about a minute)");
-      else { $("#ed-err", box).hidden = true; msg(`Saved · ${esc(E())} is re-reading it`); showResumePdf($("#ed-view", box)); }
+      else { $b("#ed-err").hidden = true; msg("Saved · updating your profile from it"); if (showPdf || mode === "latex") showResumePdf($b("#ed-view")); }
     } catch (e) { msg(esc(e.message)); }
     btn.disabled = false;
   };
   const close = () => {
     if (dirty() && !confirm("Close without saving? Your edits stay as a draft in this browser.")) return;
-    box.remove(); document.body.classList.remove("modal-open"); document.removeEventListener("keydown", keys);
+    vis.destroy(); box.remove(); document.body.classList.remove("modal-open"); document.removeEventListener("keydown", keys);
     renderProfile();
   };
   const keys = (e) => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key === "s") { e.preventDefault(); save(); }
     else if (mod && e.key === "Enter") { e.preventDefault(); preview(); }
-    else if (e.key === "Escape") close();
+    else if (mod && e.key === "z" && !e.shiftKey && mode === "visual" && !e.target.closest("[contenteditable]")) { e.preventDefault(); vis.undo(); }
+    else if (e.key === "Escape" && !e.target.closest("[contenteditable]")) close();
   };
   document.addEventListener("keydown", keys);
-  src.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab") return;
+  src.value = mode === "latex" ? (restored ? draft.tex : savedTex || Resume.toTex(model)) : "";
+  src.addEventListener("keydown", (e) => { if (e.key === "Tab") { e.preventDefault(); src.setRangeText("  ", src.selectionStart, src.selectionEnd, "end"); } });
+  src.addEventListener("input", onEdit);
+  box.querySelectorAll(".ed-mode button").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+  box.querySelectorAll("[data-style]").forEach((el) => (el.onchange = () =>
+    vis.setStyle(el.dataset.style, el.dataset.style === "size" ? +el.value : el.dataset.style === "accent" ? el.value.slice(1).toUpperCase() : el.value)));
+  $b("#ed-save").onclick = save;
+  $b("#ed-close").onclick = close;
+  $b("#ed-pdf")?.addEventListener("click", () => { showPdf = !showPdf; layout(); if (showPdf) preview(); });
+  $b("#ed-discard")?.addEventListener("click", (e) => {
     e.preventDefault();
-    src.setRangeText("  ", src.selectionStart, src.selectionEnd, "end");
+    try { localStorage.removeItem(draftKey); } catch (_) { /* */ }
+    box.remove(); document.body.classList.remove("modal-open"); document.removeEventListener("keydown", keys); vis.destroy();
+    openEditor({ mode });
   });
-  src.addEventListener("input", () => {
-    try { localStorage.setItem(draftKey, JSON.stringify({ base: r.rev, tex: src.value })); } catch (_) { /* storage off */ }
-    msg(dirty() ? "Unsaved changes" : "");
-    clearTimeout(previewTimer);
-    if (!STATIC_MODE) previewTimer = setTimeout(preview, 1500);    // live preview on the Mac
-  });
-  $("#ed-save", box).onclick = save;
-  $("#ed-close", box).onclick = close;
-  $("#ed-preview", box)?.addEventListener("click", preview);
-  $("#ed-discard", box)?.addEventListener("click", (e) => { e.preventDefault(); src.value = r.tex; try { localStorage.removeItem(draftKey); } catch (_) { /* */ } msg(""); });
-  box.querySelectorAll(".ed-tabs button").forEach((b) => (b.onclick = () => {
-    box.querySelectorAll(".ed-tabs button").forEach((x) => x.classList.toggle("active", x === b));
-    $(".ed-body", box).dataset.show = b.dataset.pane;
-  }));
-  src.setSelectionRange(0, 0);
-  src.focus();
-  src.scrollTop = 0;
+  window.toast = toast;                          // the visual editor offers Undo after deleting a section
+  layout();
+  if (showPdf || mode === "latex") { savedTex && !restored ? showResumePdf($b("#ed-view")) : preview(); }
+  if (fromScratch) msg(r?.kind === "pdf" ? "Your resume is a PDF, so this starts from your profile — fill it in and save to switch to an editable resume."
+    : "Starting from your profile — fill in the rest and save.");
 }
 
 /* ================================================================== SETTINGS */
@@ -764,7 +841,7 @@ async function renderSettings() {
     <section class="card-box">
       <h3 class="section-title">Job search</h3>
       <div class="set-row">
-        <div><b>How picky</b><div class="faint small">Jobs ${esc(E())} scores below this stay off your deck.</div></div>
+        <div><b>How picky</b><div class="faint small">Jobs scoring below this stay off your deck.</div></div>
         <div class="picky"><input type="range" id="s-min" min="20" max="80" step="5" value="${settings.min_match}" aria-label="Minimum match">
           <span id="s-min-v"><b>${settings.min_match}</b> · ${pickyLabel(settings.min_match)}</span></div>
       </div>
@@ -785,7 +862,7 @@ async function renderSettings() {
 
     <details class="card-box adv">
       <summary>Advanced</summary>
-      <p class="faint small">${esc(E())} tunes most of this itself; change it only if you have a reason.</p>
+      <p class="faint small">These tune themselves; change them only if you have a reason.</p>
       <h4>Job sources</h4>
       <div class="checks" id="s-sources">${SOURCES.map((s) => `<label><input type="checkbox" value="${s}" ${settings.sources.includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</div>
       <div class="range-row"><label for="s-age">Ignore postings older than (days)</label><input type="range" id="s-age" min="7" max="120" step="1" value="${settings.max_age_days}"><b id="s-age-v">${settings.max_age_days}</b></div>
@@ -846,7 +923,7 @@ async function renderGithub() {
       <h3 class="section-title">GitHub</h3>
       <p style="margin:0 0 6px">Synced with <b>${esc(g.owner)}/${esc(g.repo)}</b> · web app: <a href="${esc(g.site)}" target="_blank" rel="noopener">${esc(g.site)}</a></p>
       ${g.pages_manual ? `<p class="warnbox">One step left for the web app: on GitHub open <a href="https://github.com/${esc(g.owner)}/${esc(g.repo)}/settings/pages" target="_blank" rel="noopener">Settings → Pages</a> and set <b>Source: GitHub Actions</b>, then re-run the <i>Pages</i> workflow from the Actions tab. (Your token can't do this itself — it has no Pages permission.) Daily runs already work without it.</p>` : ""}
-      <p class="faint" style="font-size:13px;margin:0 0 12px">Daily runs happen on GitHub Actions (Kev on Kaggle). This Mac syncs your data every 5 minutes and a few seconds after each change.
+      <p class="faint" style="font-size:13px;margin:0 0 12px">Daily searches run on GitHub, so this Mac can be off. It syncs your data every 5 minutes and a few seconds after each change.
         Last sync: ${esc((g.last_sync || "never").replace("T", " "))} UTC${g.last_error ? ` · <span style="color:var(--bad)">${esc(g.last_error)}</span>` : ""}</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="g-sync">Sync now</button>
         <button class="btn" id="g-update" title="Re-upload the app code and workflows, refresh secrets, and start a run">Update app on GitHub</button>
@@ -863,7 +940,7 @@ async function renderGithub() {
   }
   box.innerHTML = `
     <h3 class="section-title">Publish to GitHub</h3>
-    <p class="faint" style="font-size:13px;margin-top:0">Puts the web app on GitHub Pages and moves daily runs to GitHub Actions (Kev on Kaggle), so they happen even when this Mac is off.
+    <p class="faint" style="font-size:13px;margin-top:0">Puts the web app on GitHub Pages and moves daily searches to GitHub, so they happen even when this Mac is off.
       Your data is encrypted with your passphrase before it leaves this Mac — the repo can be public.</p>
     <form id="g-form" class="stack" autocomplete="off" style="gap:10px">
       <div class="field-row"><label>Repository</label><input class="input" name="repo" value="${g.owner ? esc(g.owner + "/" + g.repo) : ""}" placeholder="your-username/job-board (create it empty first)" required></div>
@@ -990,6 +1067,7 @@ async function renderKaggle(settings) {
   const rows = accts.map((a) => ({ ...a, key: "" }));
   while (rows.length < 3) rows.push({ username: "", key: "", enabled: true, key_hint: "", _new: true });
   const mode = settings.engine_mode || "local";
+  const hosted = !!status?.jev?.available && !status.jev.local && status.jev.engine !== "Kev-4B" || STATIC_MODE;
   const fmt = (iso) => iso ? new Date(iso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
   const stateOf = (a) => {
     if (a._new || !a.key_hint) return `<span class="faint">not saved</span>`;
@@ -998,11 +1076,13 @@ async function renderKaggle(settings) {
     return `${a.verified ? '<span class="chip good">verified</span>' : '<span class="chip">unverified</span>'} <span class="faint">${a.gpu_hours_this_week} h GPU this week</span>`;
   };
   box.innerHTML = `
-    <h3 class="section-title">Where ${esc(E())} runs</h3>
-    ${STATIC_MODE ? `<p class="faint" style="font-size:13px">Scheduled runs happen on GitHub Actions, with Kev on Kaggle (GPU T4 ×2, then Kaggle CPU). Keys you add here are saved as repository secrets and can't be read back.</p>` : ""}
-    <div class="checks" style="margin-bottom:12px${STATIC_MODE ? ";display:none" : ""}">
-      <label><input type="radio" name="engine-mode" value="local" ${mode === "local" ? "checked" : ""}> This Mac (Kev-4B, ~18 s/job)</label>
-      <label><input type="radio" name="engine-mode" value="kaggle" ${mode === "kaggle" ? "checked" : ""}> Kaggle — GPU T4 ×2, then Kaggle CPU, then this Mac</label>
+    <h3 class="section-title">${hosted ? "Backup compute" : "Where searches run"}</h3>
+    <p class="faint small" style="margin-top:0">${hosted
+      ? "Searches normally finish in seconds. If the main service is ever unavailable, they carry on using free GPUs on these Kaggle accounts, so a daily search is never skipped."
+      : "Searches use free GPUs on these Kaggle accounts (GPU first, then CPU)."}${STATIC_MODE ? " Keys you add here are saved as repository secrets and can't be read back." : ""}</p>
+    <div class="checks" style="margin-bottom:12px${STATIC_MODE || hosted ? ";display:none" : ""}">
+      <label><input type="radio" name="engine-mode" value="local" ${mode === "local" ? "checked" : ""}> This Mac</label>
+      <label><input type="radio" name="engine-mode" value="kaggle" ${mode === "kaggle" ? "checked" : ""}> Kaggle GPUs, then this Mac</label>
     </div>
     <div class="table-wrap"><table class="tracker kaggle-table">
       <thead><tr><th>Kaggle username</th><th>API key</th><th>Use</th><th>Status</th><th></th></tr></thead>

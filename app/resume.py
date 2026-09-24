@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 # Packages the resume template needs; a fresh TinyTeX lacks some of them.
-BASE_PACKAGES = ["titlesec", "enumitem", "fontawesome5", "cm-super", "xcolor", "hyperref", "tools", "graphics", "geometry"]
+BASE_PACKAGES = ["titlesec", "enumitem", "fontawesome5", "cm-super", "xcolor", "hyperref", "tools", "graphics", "geometry",
+                 "psnfss", "palatino", "times", "helvetic", "charter", "fpl", "mathpazo", "lm"]      # + the editor's fonts
 
 
 class CompileError(RuntimeError):
@@ -166,7 +167,7 @@ class ResumeStore:
         for old in sorted(v.iterdir())[:-40]:          # the last 40 versions are plenty
             old.unlink()
 
-    def save_tex(self, tex: str, filename: Optional[str] = None) -> dict:
+    def save_tex(self, tex: str, filename: Optional[str] = None, model: Optional[dict] = None) -> dict:
         """Save new LaTeX source and compile it. The source is saved even if LaTeX fails (the error is
         recorded and the previous PDF stays), so edits are never lost."""
         prev = self.get() or {}
@@ -174,7 +175,7 @@ class ResumeStore:
             self._keep_version(prev.get("filename") or "resume.tex", prev["tex"].encode())
         rev = rev_of(tex)
         res = self._record(kind="tex", tex=tex, rev=rev, filename=filename or prev.get("filename") or "resume.tex",
-                           error=None)
+                           error=None, model=model, model_rev=rev if model else None)   # the visual editor's sections
         self.compile_current()
         self._write_back()
         return self.get() or res

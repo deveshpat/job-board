@@ -145,6 +145,17 @@ class DB:
             self.conn.commit()
         return n
 
+    def retriage(self, jobs: List[dict]) -> int:
+        """Send postings that were turned away at triage back to triage (with their current text)."""
+        n = 0
+        with self.lock:
+            for j in jobs:
+                cur = self.conn.execute("UPDATE jobs SET status='raw', triage=NULL, data=?, updated_at=? "
+                                        "WHERE id=? AND status='triaged_out'", (json.dumps(j), now(), j["id"]))
+                n += cur.rowcount
+            self.conn.commit()
+        return n
+
     def update_job(self, job_id: str, **fields) -> None:
         for k in ("triage", "eval", "card"):
             if k in fields and not isinstance(fields[k], (str, type(None))):

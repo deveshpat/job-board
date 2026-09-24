@@ -22,16 +22,17 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.TinyTeX
-          key: tinytex-${{ runner.os }}-v1
+          key: tinytex-${{ runner.os }}-v2
       - name: Install LaTeX (TinyTeX, cached between runs)
         run: |
           if ! ls ~/.TinyTeX/bin/*/pdflatex >/dev/null 2>&1; then
             curl -fsSL https://yihui.org/tinytex/install-bin-unix.sh | sh
           fi
-          ~/.TinyTeX/bin/*/tlmgr install titlesec enumitem fontawesome5 cm-super xcolor hyperref tools graphics geometry > /dev/null
+          ~/.TinyTeX/bin/*/tlmgr install titlesec enumitem fontawesome5 cm-super xcolor hyperref tools graphics geometry psnfss palatino times helvetic charter fpl mathpazo lm > /dev/null
       - name: Compile and save
         env:
           JOBBOARD_DATA_KEY: ${{ secrets.JOBBOARD_DATA_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: |
           git -C state config user.name "jobboard-bot"
           git -C state config user.email "41898282+github-actions[bot]@users.noreply.github.com"

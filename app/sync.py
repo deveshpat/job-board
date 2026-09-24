@@ -9,6 +9,7 @@ While GitHub sync is on, the daily run happens on GitHub Actions, not on this Ma
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -112,6 +113,8 @@ class Sync:
         gh.commit_files("main", publishable_files(), "Job board app")
         self.log("Saving secrets…")
         gh.set_secret("JOBBOARD_DATA_KEY", vault.b64(key))
+        if os.environ.get("TYPESAFE_API_KEY") and not os.environ.get("JEV_BASE_URL", "").startswith("http://127."):
+            gh.set_secret("TYPESAFE_API_KEY", os.environ["TYPESAFE_API_KEY"])     # scheduled runs use hosted Jev too
         self.push_kaggle_keys(gh)                    # assigns slots first, so the snapshot below includes them
         if not existing:
             self.log("Creating the encrypted data branch…")

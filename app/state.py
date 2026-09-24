@@ -191,5 +191,6 @@ def export_board(db: DB) -> Dict[str, Any]:
             "last_run": {k: last[k] for k in ("started", "finished", "stats")} if last else None,
             "last_log": (last or {}).get("log", "").splitlines()[-40:],
             "kaggle": Accounts(db).public(),                       # usage/blocks only — never keys
+            "engine": db.get("engine_label") or "Kev-4B",
             "defaults": {k: v for k, v in DEFAULT_SETTINGS.items() if k != "companies"},
             "labels": {"field_labels": Q.FIELDS, "level_labels": Q.LEVELS, "countries": Q.COUNTRIES}}

@@ -643,3 +643,28 @@ def test_take_location_points():
     assert not any("Location" in c for c in take("remote_open")["cons"] + take("local_office")["cons"])
     assert any("unclear" in c for c in take("unclear")["cons"])
     assert any(c.startswith("Listed for USA") for c in take("remote_open", listed_elsewhere="USA | Remote")["cons"])
+
+
+def test_hosted_jev_first_then_kaggle(tmp_path, monkeypatch):
+    """Hosted Jev runs the pipeline; if it fails (no credit, outage), Kev on Kaggle takes over."""
+    from app import kaggle as kg
+    from app.jev import JevError
+    db = DB(tmp_path / "db.sqlite")
+    db.put("profile", build_profile(RESUME, None))
+    db.put("settings", {"min_match": 0, "engine_mode": "kaggle"})
+    kg.Accounts(db).save([{"username": "acct_a", "key": "k" * 32, "enabled": True}])
+    monkeypatch.setattr(pl, "fetch_all", lambda *a, **k: _jobs())
+    monkeypatch.setattr(jev_mod, "API_URL", "https://api.typesafe.ai/v1/systemone")
+    runner = kg.KaggleRunner(db, cli_factory=FakeKaggle, sleep=lambda s: None)
+    p = pl.Pipeline(db, Jev(api_key="k", cache_path=tmp_path / "c.db"), kaggle=runner)
+    runner.log = p.log
+    used = []
+    monkeypatch.setattr(pl.Pipeline, "_run_local", lambda self, *a, **k: used.append("jev") or {"engine": "jev"})
+    FakeKaggle.behaviour, FakeKaggle.calls = {}, []
+    assert p.run()["engine"] == "jev" and not FakeKaggle.calls          # Jev first, even with engine_mode=kaggle
+
+    def down(self, *a, **k):
+        raise JevError("Jev HTTP 402: out of credit")
+    monkeypatch.setattr(pl.Pipeline, "_run_local", down)
+    db.conn.execute("DELETE FROM jobs"); db.conn.commit()
+    assert p.run()["engine"] == "kaggle" and any(a == ("kernels", "push") for _, a in FakeKaggle.calls)

@@ -10,6 +10,10 @@ on:
         description: Run now even if today's run already happened
         type: boolean
         default: true
+      reevaluate:
+        description: Re-read the whole board (e.g. after switching engines)
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -27,9 +31,10 @@ jobs:
         with: { python-version: "3.12", cache: pip }
       - run: pip install -q -r requirements.txt kaggle
       - id: run
-        name: Run pipeline on Kaggle
+        name: Run pipeline (Jev, Kev on Kaggle as fallback)
         env:
           JOBBOARD_DATA_KEY: ${{ secrets.JOBBOARD_DATA_KEY }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           # One secret per Kaggle account slot; which username is in which slot is stored (encrypted) in user.enc.
           KAGGLE_KEY_1: ${{ secrets.KAGGLE_KEY_1 }}
           KAGGLE_KEY_2: ${{ secrets.KAGGLE_KEY_2 }}
@@ -40,7 +45,7 @@ jobs:
           JOBBOARD_KAGGLE_BUDGET_H: "4.5"
         run: |
           set +e
-          python scripts/ci_run.py --state state ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}
+          python scripts/ci_run.py --state state ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }} ${{ (github.event_name == 'workflow_dispatch' && inputs.reevaluate) && '--reevaluate' || '' }}
           echo "code=$?" >> "$GITHUB_OUTPUT"
       - name: Save encrypted state
         if: steps.run.outputs.code == '0' || steps.run.outputs.code == '2'

@@ -16,7 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import vault  # noqa: E402
 from app.db import now  # noqa: E402
-from app.profile import refresh_profile  # noqa: E402
+from app.jev import Jev  # noqa: E402
+from app.profile import build_profile, carry_overrides, refresh_profile  # noqa: E402
 from app.resume import CompileError, compile_tex, source_file  # noqa: E402
 
 
@@ -49,14 +50,24 @@ def main(argv=None, compile_fn=compile_tex) -> int:
     profile = user.get("profile")
     have_pdf = built.get("rev") == res["rev"] and built.get("pdf")
     if (profile or {}).get("resume_rev") != res["rev"] and (res.get("kind") == "tex" or have_pdf):
+        jev_key = os.environ.get("TYPESAFE_API_KEY", "").strip()
         with tempfile.TemporaryDirectory() as tmp:
             path, rev = source_file(res, Path(tmp), vault.unb64(built["pdf"]) if res.get("kind") != "tex" else None)
-            new = refresh_profile(profile, path, rev, res.get("filename") or "")
-        new["kev_rev"] = (profile or {}).get("kev_rev")
+            try:
+                if not jev_key:
+                    raise RuntimeError("no model key")
+                # the full read (skills, level, roles), your manual edits kept
+                new = carry_overrides(profile, build_profile(path, Jev(api_key=jev_key), res.get("filename") or ""))
+                new["kev_rev"] = rev
+            except Exception as e:                       # facts only; the Mac app finishes the read later
+                print(f"Quick profile refresh only ({e})")
+                new = refresh_profile(profile, path, rev, res.get("filename") or "")
+                new["kev_rev"] = (profile or {}).get("kev_rev")
+        new["resume_rev"] = rev
         user["profile"] = new
         user.setdefault("meta", {})["profile"] = now()
         (args.state / "user.enc").write_bytes(vault.encrypt(key, "user", user))
-        print("Profile refreshed from the new resume (Kev re-reads it next time the Mac app runs).")
+        print("Profile updated from the new resume.")
     return 0
 
 

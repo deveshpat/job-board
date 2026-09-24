@@ -76,7 +76,7 @@ def rebuild_profile() -> None:
                 break
             use_kev = jev.available
             profile_job.update(running=True, error=None,
-                               stage=f"{ENGINE_LABEL} is reading your resume" if use_kev else "Updating your profile")
+                               stage="Reading your resume" if use_kev else "Updating your profile")
             try:
                 resumes.compile_current()
                 path, rev = resumes.text_source()
@@ -290,7 +290,7 @@ def _public_profile(p: Optional[dict]) -> Optional[dict]:
     return {k: v for k, v in p.items() if k != "resume_text"} | {
         "field_labels": Q.FIELDS, "level_labels": Q.LEVELS, "countries": Q.COUNTRIES,
         "photo_url": f"/api/photo?v={hashlib.sha1(photo.encode()).hexdigest()[:8]}" if photo else None,
-        "resume": {k: v for k, v in res.items() if k != "tex"} if res else None,
+        "resume": {k: v for k, v in res.items() if k not in ("tex", "model")} if res else None,
         "kev_behind": _kev_behind(), "job": profile_job}
 
 
@@ -357,7 +357,7 @@ async def save_resume(request: Request):
     tex = b.get("tex") or ""
     if "\\begin{document}" not in tex:
         raise HTTPException(400, "That doesn't look like a LaTeX document (no \\begin{document})")
-    res = resumes.save_tex(tex, b.get("filename"))
+    res = resumes.save_tex(tex, b.get("filename"), b.get("model"))
     rebuild_profile()
     return resumes.public() | {"compiled": not res.get("error")}
 

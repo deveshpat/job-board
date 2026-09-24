@@ -34,6 +34,8 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", required=True, type=Path)
     ap.add_argument("--force", action="store_true", help="run now even if not due (manual dispatch)")
+    ap.add_argument("--reevaluate", action="store_true",
+                    help="re-read the board and give titles turned away at triage another look (e.g. after an engine change)")
     args = ap.parse_args(argv)
     key = vault.unb64(os.environ["JOBBOARD_DATA_KEY"])
 
@@ -57,20 +59,23 @@ def main(argv=None, runner_factory=KaggleRunner) -> int:
                                         "enabled": k.get("enabled", True)}
         Accounts(db).save([a for a in accts.values() if a.get("key")])
         db.put("settings", {**db.get("settings", {}), "engine_mode": "kaggle", "local_fallback": False})
+        # Hosted Jev when the TYPESAFE_API_KEY secret is set (Kev on Kaggle stays the fallback); else Kev on Kaggle.
+        jev_key = os.environ.get("TYPESAFE_API_KEY", "").strip()
+        db.put("engine_label", "Jev" if jev_key else "Kev-4B")
 
-        pipe = Pipeline(db, Jev(api_key="kaggle"), engine=None)
+        pipe = Pipeline(db, Jev(api_key=jev_key or "kaggle"), engine=None)
         pipe.kaggle = runner_factory(db, log=pipe.log)
         pipe.rescore()                    # cards follow your latest profile/settings (and card format) — no model calls
         code, started = 0, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")  # UTC, see _due
         stats = {}
         try:
-            stats = pipe.run()
+            stats = pipe.run(reevaluate=args.reevaluate, retriage=args.reevaluate)
             pipe.log(f"stats: {json.dumps(stats)}")
         except KaggleError as e:
             pipe.log(f"✗ Kaggle unavailable today: {e}")
             code = 2
         finally:
-            db.save_run(started, {**stats, "engine": "kaggle"}, pipe.state["log"])
+            db.save_run(started, {"engine": "kaggle", **stats}, pipe.state["log"])
             print("\n".join(pipe.state["log"]))
         (args.state / "pipeline.enc").write_bytes(vault.encrypt(key, "pipeline", state.export_pipeline(db)))
         (args.state / "board.enc").write_bytes(vault.encrypt(key, "board", state.export_board(db)))

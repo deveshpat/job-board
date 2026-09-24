@@ -228,7 +228,7 @@
   function resumeMeta() {
     const r = S.user.resume;
     if (!r) return null;
-    const { tex, ...meta } = r;
+    const { tex, model, ...meta } = r;
     const err = S.pdf?.error && S.pdf.error.rev === r.rev ? S.pdf.error : r.error || null;
     return { ...meta, pdf_rev: S.pdf?.rev || null, pdf_current: S.pdf?.rev === r.rev, error: err, latex: false };
   }
@@ -237,8 +237,9 @@
     if (!S.token) httpError("Add your GitHub token (Settings → Sync) so GitHub can build the PDF.");
     await GH.dispatch("resume.yml");
   }
-  async function saveResumeTex(tex, filename) {
-    S.user.resume = { ...(S.user.resume || {}), kind: "tex", tex, rev: await revOf(tex), error: null,
+  async function saveResumeTex(tex, filename, model) {
+    const rev = await revOf(tex);
+    S.user.resume = { ...(S.user.resume || {}), kind: "tex", tex, rev, error: null, model: model || null, model_rev: model ? rev : null,
                       filename: filename || S.user.resume?.filename || "resume.tex", updated_at: nowIso() };
     changed("resume");
     await buildResume();
@@ -281,7 +282,7 @@
       if (S.wasRunning && !running) await loadRemote().catch(() => {});   // a run just finished: fetch its board
       S.wasRunning = running;
       return {
-        jev: { available: true, engine: "Kev-4B", local: false, engine_state: null, model: "kev-4b" },
+        jev: { available: true, engine: S.board?.engine || "Kev-4B", local: false, engine_state: null, model: "kev-4b" },
         counts: counts(), has_profile: !!S.user.profile, static: true, token: !!S.token,
         pipeline: { running, stage: running ? `GitHub Actions: ${run.status.replace("_", " ")}` : "idle", done: 0, total: 0,
                     log: S.board?.last_log || [], error: null },
@@ -306,7 +307,7 @@
     }
     if (p === "/api/resume" && method === "PUT") {
       if (!/\\begin\{document\}/.test(body.tex || "")) httpError("That doesn't look like a LaTeX document (no \\begin{document})");
-      return saveResumeTex(body.tex, body.filename);
+      return saveResumeTex(body.tex, body.filename, body.model);
     }
     if (p === "/api/resume/upload") {
       const name = q.get("filename") || "resume.pdf", file = opts.body;

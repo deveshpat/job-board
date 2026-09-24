@@ -328,7 +328,7 @@ class Pipeline:
             self.db.save_run(started, {**stats, "jev": dict(self.jev.usage)}, self.state["log"])
 
     # -- the run ----------------------------------------------------------
-    def run(self, reevaluate: bool = False) -> Dict[str, int]:
+    def run(self, reevaluate: bool = False, retriage: bool = False) -> Dict[str, int]:
         cfg = self.settings()
         profile = self.db.get("profile")
         if not profile:
@@ -345,6 +345,9 @@ class Pipeline:
         fresh = [j for j in jobs if j["id"] not in known and (not j["posted_at"] or j["posted_at"] >= cutoff)]
         self.log(f"{len(jobs)} postings · {len(fresh)} new & posted within {cfg['max_age_days']} days")
         self.db.insert_raw(fresh)
+        if retriage:          # a better engine arrived: give titles the old one turned away another look
+            n = self.db.retriage([j for j in jobs if j["id"] in known and (not j["posted_at"] or j["posted_at"] >= cutoff)])
+            self.log(f"{n} postings turned away at triage earlier get another look")
         refreshed = self.db.refresh_text([j for j in jobs if j["id"] in known])
         if refreshed:
             self.log(f"Updated the text of {refreshed} postings already on your board")
@@ -361,15 +364,29 @@ class Pipeline:
         raw = self.db.jobs(["raw"], limit=100_000)
         to_triage = [r["data"] for r in raw if not r["triage"]]
 
-        # REMOTE: the same decisions on Kaggle (GPU → CPU across your accounts); local Kev if that fails.
+        args = (profile, candidate, skills, cfg)
+        # 1. Hosted Jev (TypeSafe): fastest and most accurate (bench/results/report.md). Kev on Kaggle if it fails.
+        if use_jev and not self.jev.is_local:
+            try:
+                return self._run_local(to_triage, raw, profile, candidate, skills, cfg, terms, use_jev, reevaluate,
+                                       len(jobs), len(fresh))
+            except JevError as e:
+                if not self.kaggle.configured:
+                    raise
+                self.log(f"Jev unavailable ({str(e)[:160]}) — falling back to Kev on Kaggle")
+                raw = self.db.jobs(["raw"], limit=100_000)
+                to_triage = [r["data"] for r in raw if not r["triage"]]
+                return self._run_remote(to_triage, raw, *args, len(jobs), len(fresh))
+        # 2. Kev on Kaggle (GPU → CPU across your accounts); local Kev if that fails.
         if cfg.get("engine_mode") == "kaggle" and self.kaggle.configured and use_jev and not reevaluate:
             self._stage("Running on Kaggle")
             try:
-                return self._run_remote(to_triage, raw, profile, candidate, skills, cfg, len(jobs), len(fresh))
+                return self._run_remote(to_triage, raw, *args, len(jobs), len(fresh))
             except KaggleError as e:
                 if not cfg.get("local_fallback", True):
                     raise
                 self.log(f"Kaggle unavailable ({str(e)[:160]}) — running on this Mac instead")
+        # 3. Kev on this Mac (or the keyword heuristic when there is no engine at all).
         if self.engine and use_jev:
             self._stage("Loading the local engine (about a minute)")
         with self.engine.use() if (self.engine and use_jev) else nullcontext():
@@ -389,17 +406,20 @@ class Pipeline:
         passed += [r["data"] for r in backlog]
 
         # EVALUATE -------------------------------------------------------
-        todo = passed[: cfg["max_deep"]]
+        cap = cfg["max_deep"] if self.jev.is_local else max(cfg["max_deep"], 2000)   # hosted Jev: ~0.4 s and a fraction of a cent per job
+        todo = passed[:cap]
         if len(passed) > len(todo):
-            self.log(f"{len(passed) - len(todo)} triaged jobs over max_deep={cfg['max_deep']}; next run picks them up")
+            self.log(f"{len(passed) - len(todo)} triaged jobs over the cap of {cap}; next run picks them up")
         if reevaluate:
-            todo += [r["data"] for r in self.db.jobs(["new", "later", "filtered"], limit=cfg["max_deep"])]
+            seen = {j["id"] for j in todo}
+            todo += [r["data"] for r in self.db.jobs(["new", "later", "filtered"], limit=100_000 if not self.jev.is_local else cap)
+                     if r["id"] not in seen]
         gaps = gap_vocab(skills)
         self._stage("Evaluate postings" if use_jev else "Score (heuristic)", len(todo))
         loaded = self._evaluate(todo, profile, candidate, skills, gaps, cfg, use_jev)
 
         stats = {"fetched": n_fetched, "fresh": n_fresh, "triaged_in": len(passed),
-                 "evaluated": len(todo), "loaded": loaded, "engine": "local"}
+                 "evaluated": len(todo), "loaded": loaded, "engine": "local" if self.jev.is_local else "jev"}
         self.log(f"✓ Loaded {loaded} jobs onto the board · Jev: {self.jev.usage['requests']} requests, "
                  f"{self.jev.usage['input_tokens']:,} input tokens, {self.jev.usage['cached']} cached")
         return stats
