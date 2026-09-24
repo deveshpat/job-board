@@ -19,7 +19,7 @@ from . import questions as Q
 from .db import APP_FIELDS, DB, now
 
 BOARD_STATUSES = ("new", "later", "applied", "rejected")
-DESC_CHARS = 6000
+DESC_CHARS = 30000           # whole descriptions (the longest seen are ~17k); board.enc is gzipped
 
 
 # -- user.enc -----------------------------------------------------------------------------------

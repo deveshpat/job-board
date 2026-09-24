@@ -67,7 +67,32 @@ def job_state(job: dict) -> dict:
 # SCORE: answers -> card (pure; re-runnable without new Jev calls)
 # ---------------------------------------------------------------------------
 
-def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], min_match: float) -> dict:
+# Where a posting says it is, checked against where you are — a plain-text sanity check on Kev's location call.
+CITIES = {"India": r"india|bengaluru|bangalore|mumbai|delhi|gurugram|gurgaon|noida|hyderabad|pune|chennai|kolkata|"
+                   r"ahmedabad|jaipur|chandigarh|kochi|indore|coimbatore|thiruvananthapuram|dehradun"}
+ANYWHERE = re.compile(r"\b(anywhere|worldwide|global(ly)?|any location|all locations|remote[- ]first|fully distributed)\b", re.I)
+ELSEWHERE = re.compile(r"\b(usa?|u\.s\.a?\.?|united states|canada|uk|united kingdom|europe|eu|emea|germany|france|spain|poland|"
+                       r"netherlands|ireland|portugal|brazil|mexico|latam|north america|americas|australia|singapore|japan|"
+                       r"new york|san francisco|london|berlin|paris|amsterdam|toronto|seattle|austin|boston|nyc|sf)\b", re.I)
+
+
+def listed_location(job: Optional[dict], country: str) -> Optional[str]:
+    """'yours' if the posting lists your country (or a city in it), 'elsewhere' if it only lists other places,
+    None if it says nothing useful (or 'anywhere')."""
+    if not job or not country:
+        return None
+    text = " ".join(str(job.get(k) or "") for k in ("location", "location_restrictions"))
+    if not text.strip():
+        return None
+    if re.search(rf"\b({CITIES.get(country, re.escape(country.lower()))})\b", text, re.I):
+        return "yours"
+    if ANYWHERE.search(text):
+        return None
+    return "elsewhere" if ELSEWHERE.search(text) else None
+
+
+def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], min_match: float,
+                  job: Optional[dict] = None) -> dict:
     cand_level = profile.get("level") or "entry"
     country = profile.get("country") or "your country"
     lp = a["level"]["probabilities"]
@@ -97,6 +122,11 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
     if a["field"]["probabilities"].get("non_engineering", 0) > Q.GATE_NON_ENGINEERING_MAX:
         gates.append("Non-engineering field")
     eligible = lprob.get("remote_open", 0) + lprob.get("local_office", 0) + 0.5 * lprob.get("unclear", 0)
+    listed = listed_location(job, profile.get("country") or "")
+    if listed == "yours":
+        eligible = max(eligible, 1.0)            # the posting itself names your country/city
+        if lprob.get("unclear", 0) > 0.6:
+            match = min(100.0, match + Q.UNCLEAR_LOCATION_PENALTY)
     if eligible < Q.GATE_LOCATION_ELIGIBLE_MIN:
         gates.append(f"Not open to candidates in {country}")
     if level_fit < Q.GATE_LEVEL_FIT_MIN:
@@ -116,8 +146,11 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
     matched.sort(key=lambda s: rank.get(s, (False, 0, 0)), reverse=True)       # your core skills first
     lead = a.get("lead_project", {}).get("choice")
 
+    loc_choice = loc["choice"]
+    if listed == "yours" and loc_choice not in ("remote_open", "local_office"):
+        loc_choice = "remote_open" if re.search(r"\bremote\b", str(job.get("location") or ""), re.I) else "local_office"
     loc_label = {"remote_open": f"Remote · open to {country}", "local_office": f"Office in {country}",
-                 "restricted": "Location-restricted", "unclear": "Location unclear"}[loc["choice"]]
+                 "restricted": "Location-restricted", "unclear": "Location unclear"}[loc_choice]
     sk, ia = a["skill_alignment"], a["interest_alignment"]
     reasons = [
         f"Skills: {sk['legend'][str(round(sk['score']))]} ({sk['score']:.1f}/4)",
@@ -138,10 +171,11 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
         "match": round(match), "tier": tier, "confidence": round(confidence, 3),
         "unsure": confidence < Q.LOW_CONFIDENCE,
         "chips": [c for c in chips if c],
-        "location_ok": loc["choice"] in ("remote_open", "local_office"),
+        "location_ok": loc_choice in ("remote_open", "local_office") and listed != "elsewhere",
         "skills_matched": matched, "skills_gap": missing,
         "lead_project": None if lead in (None, "none") else lead,
-        "take": kev_take(a, comp, cand_level, loc["choice"], loc_label, matched, missing, confidence),
+        "take": kev_take(a, comp, cand_level, loc_choice, loc_label, matched, missing, confidence,
+                         listed_elsewhere=(job or {}).get("location") if listed == "elsewhere" else None),
         "reasons": reasons, "gates": gates,
         "components": {k: round(v, 3) for k, v in comp.items()},
         "scored_by": "jev",
@@ -153,7 +187,7 @@ def _list(xs: List[str], n: int = 4) -> str:
 
 
 def kev_take(a: dict, comp: dict, cand_level: str, loc_choice: str, loc_label: str,
-             matched: List[str], missing: List[str], confidence: float) -> dict:
+             matched: List[str], missing: List[str], confidence: float, listed_elsewhere: Optional[str] = None) -> dict:
     """Kev's answers as a short verdict plus the few points that matter — no probabilities or rubric text."""
     pros, cons = [], []
     sk = comp["skill_alignment"]
@@ -169,10 +203,13 @@ def kev_take(a: dict, comp: dict, cand_level: str, loc_choice: str, loc_label: s
         pros.append("The kind of role you're after")
     elif comp["interest_alignment"] < 0.5:
         cons.append("Off your stated goal")
-    if loc_choice == "restricted":                     # a good location is already the first chip
+    if listed_elsewhere and loc_choice != "restricted":
+        cons.append(f"Listed for {listed_elsewhere.strip()[:60]} — check they hire where you are")
+    elif loc_choice == "restricted":
         cons.append("Probably limited to other countries — check before applying")
-    else:
+    elif loc_choice == "unclear":
         cons.append("Location unclear — check before applying")
+    # (an open location is already the first chip on the card)
     job_level = a["level"]["choice"]
     if comp["level_fit"] >= 0.75:
         pros.append(f"Right level ({LEVEL_LABEL[job_level].lower()})")
@@ -308,6 +345,9 @@ class Pipeline:
         fresh = [j for j in jobs if j["id"] not in known and (not j["posted_at"] or j["posted_at"] >= cutoff)]
         self.log(f"{len(jobs)} postings · {len(fresh)} new & posted within {cfg['max_age_days']} days")
         self.db.insert_raw(fresh)
+        refreshed = self.db.refresh_text([j for j in jobs if j["id"] in known])
+        if refreshed:
+            self.log(f"Updated the text of {refreshed} postings already on your board")
         # Postings already in the Tracker (e.g. applied elsewhere) skip triage and never reach the deck.
         tracked = {_norm_url(a["url"]) for a in self.db.applications() if a["url"]}
         already = [j for j in fresh if _norm_url(j["url"]) in tracked]
@@ -427,7 +467,7 @@ class Pipeline:
         loaded = 0
         for jid, ans in answers["eval"].items():
             if jid in jobs:
-                card = score_answers(ans, profile, skills, gaps, cfg["min_match"])
+                card = score_answers(ans, profile, skills, gaps, cfg["min_match"], jobs[jid])
                 loaded += self._store_eval(jid, ans, card, skills, gaps)
         self.log(f"✓ Loaded {loaded} jobs onto the board (Kaggle)")
         return {"fetched": n_fetched, "fresh": n_fresh, "triaged_in": passed, "evaluated": len(answers["eval"]),
@@ -454,7 +494,7 @@ class Pipeline:
             if not use_jev:
                 return job, None, heuristic_card(job, profile, skills, cfg["min_match"])
             ans = self.jev.ask({"candidate": candidate, "job": job_state(job)}, questions)
-            return job, ans, score_answers(ans, profile, skills, gaps, cfg["min_match"])
+            return job, ans, score_answers(ans, profile, skills, gaps, cfg["min_match"], job)
 
         with ThreadPoolExecutor(self._workers()) as ex:
             futs = [ex.submit(run, j) for j in jobs]
@@ -478,7 +518,7 @@ class Pipeline:
         for row in self.db.jobs(["new", "filtered"], limit=100_000):
             if row["eval"]:
                 ev = row["eval"]
-                card = score_answers(ev["answers"], profile, ev["skills"], ev["gaps"], cfg["min_match"])
+                card = score_answers(ev["answers"], profile, ev["skills"], ev["gaps"], cfg["min_match"], row["data"])
             else:
                 card = heuristic_card(row["data"], profile, skills, cfg["min_match"])
             status = "filtered" if card["gates"] else "new"

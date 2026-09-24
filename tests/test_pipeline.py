@@ -625,3 +625,21 @@ def test_workflows_are_valid_yaml():
     for wf in (Path(__file__).parents[1] / ".github" / "workflows").glob("*.yml"):
         doc = yaml.safe_load(wf.read_text())
         assert doc.get("jobs") and (doc.get("on") or doc.get(True)), wf.name     # YAML reads `on:` as True
+
+
+def test_listed_location_check():
+    ll = pl.listed_location
+    assert ll({"location": "Bengaluru · OnSite"}, "India") == "yours"
+    assert ll({"location": "Remote", "location_restrictions": "India, Philippines"}, "India") == "yours"
+    assert ll({"location": "USA | Remote"}, "India") == "elsewhere"
+    assert ll({"location": "Remote - Worldwide (US HQ)"}, "India") is None       # anywhere beats a named HQ
+    assert ll({"location": "Remote"}, "India") is None and ll(None, "India") is None
+
+
+def test_take_location_points():
+    comp = {"skill_alignment": 0.8, "interest_alignment": 0.9, "should_apply": 0.9, "level_fit": 0.9, "experience_fit": 0.9}
+    a = {"level": {"choice": "entry"}, "experience": {"choice": "0_2"}, "degree": {"probabilities": {}}, "red_flags": {"noul": 0.0}}
+    take = lambda loc, **kw: pl.kev_take(a, comp, "entry", loc, "x", ["Python"], [], 0.9, **kw)
+    assert not any("Location" in c for c in take("remote_open")["cons"] + take("local_office")["cons"])
+    assert any("unclear" in c for c in take("unclear")["cons"])
+    assert any(c.startswith("Listed for USA") for c in take("remote_open", listed_elsewhere="USA | Remote")["cons"])

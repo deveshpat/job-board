@@ -488,7 +488,7 @@ def pipeline_status():
 def list_jobs(status: str = "new", limit: int = 200):
     rows = db.jobs(status.split(","), limit=limit)
     return [{**r["data"], "status": r["status"], "match": r["match"], "card": r["card"],
-             "reason": r["reason"], "description": (r["data"].get("description") or "")[:6000]}
+             "reason": r["reason"], "description": (r["data"].get("description") or "")[:30000]}
             for r in rows]
 
 

@@ -42,13 +42,38 @@ def _company_name(slug: str) -> str:
     return COMPANY_NAMES.get(slug, slug.replace("-", " ").title())
 
 
+_BLOCKS = ["p", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "table", "section", "article",
+           "header", "footer", "blockquote", "pre", "hr"]
+
+
 def html_to_text(s: Optional[str]) -> str:
+    """Readable text from a posting's HTML: paragraphs and bullets on their own lines, inline tags (links, bold)
+    kept inline, and links whose text is a shortened URL (HN shows "https://jobs.ashbyhq.com/x/2c12...")
+    replaced by the real address."""
     if not s:
         return ""
     s = html.unescape(s) if "&lt;" in s else s
-    text = BeautifulSoup(s, "html.parser").get_text("\n")
+    soup = BeautifulSoup(s, "html.parser")
+    for a in soup.find_all("a", href=True):
+        t, href = a.get_text().strip(), a["href"].strip()
+        short = t.rstrip(".…").strip()
+        if href.startswith("http") and (t.endswith(("...", "…")) or (short and href.startswith(short) and len(href) > len(short))):
+            a.replace_with(href)
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for li in soup.find_all("li"):
+        li.insert_before("\n- ")
+        li.insert_after("\n")
+    for tag in soup.find_all(_BLOCKS):
+        tag.insert_before("\n\n")
+        tag.insert_after("\n\n")
+    text = soup.get_text()
     text = re.sub(r"[ \t\xa0]+", " ", text)
-    return re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n- *\n+", "\n- ", text)                 # a bullet whose text started on the next line
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"(?m)^(- .*)\n\n(?=- )", r"\1\n", text)       # one list, not a blank line per bullet
+    return re.sub(r"(?m)^(- .*)\n\n(?=- )", r"\1\n", text).strip()
 
 
 def _iso(v) -> Optional[str]:

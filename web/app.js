@@ -88,6 +88,7 @@ function route() {
   const fn = routes[name] || renderApplications;
   document.querySelectorAll("[data-tab]").forEach((a) => a.classList.toggle("active", a.dataset.tab === name));
   clearTimeout(profileTimer);
+  view.classList.toggle("wide", name === "tracker");
   cleanupDeck();
   fn();
   view.focus({ preventScroll: true });
@@ -110,6 +111,7 @@ async function renderApplications() {
     api("/api/status").then((s) => s.counts),
   ]);
   deck.jobs = jobs;
+  if (!deck.skills) deck.skills = ((await api("/api/profile").catch(() => null))?.keywords || []).filter((k) => k.keep).map((k) => k.name);
   const tab = (key, label) =>
     `<button data-mode="${key}" class="${deck.mode === key ? "active" : ""}">${label}<b>${counts[key] || 0}</b></button>`;
   view.innerHTML = `
@@ -148,6 +150,104 @@ function ring(card) {
   return `<div class="ring ${card?.tier || "good"}" style="--p:${m}"><span>${m}</span></div>`;
 }
 
+/* ------------------------------------------------------------------ job description: structure + highlights
+   Postings run long and differ a lot. This splits the text into sections, emphasises requirements, folds away
+   company/benefits/legal boilerplate, highlights what Kev's take depends on (your skills, missing skills,
+   years asked, location/visa lines, pay), and quotes those lines under "In their words" so the take can be
+   checked at a glance. Pure text work — same on the Mac and on Pages. */
+const JD = {
+  key: /(requirement|qualification|what (you('|’)ll|you will|we('|’)d like you to) (need|bring|have)|what we('|’)re looking for|we('|’)re looking for|you have|you bring|you should|who you are|about you|ideal candidate|must.have|minimum|basic qual|skills|experience)/i,
+  nice: /(nice.to.have|bonus|preferred|pluses|extra credit|good to have)/i,
+  boil: /^(about (us|the company|the team at|[A-Z][\w&.-]*$)|who we are|(our )?benefits|perks|what we offer|why (join|work)|life at|our (values|culture|mission)|equal (opportunit|employment)|eeo|diversity|privacy|accommodation|how to apply|the fine print|disclaimer|compensation (and|&) benefits)/i,
+  boilPara: /(equal opportunit|regardless of (race|gender|age|background|sex)|reasonable accommodation|privacy (notice|policy)|e-verify|we are committed to (building|providing|creating) a diverse|consideration for employment)/i,
+  headWords: /(responsibilit|what you('|’)ll (do|work on)|what you will do|the role|role overview|about the role|your impact|day.to.day|in this role|job description|overview|summary|the team|location|compensation|salary|pay range|tech stack|our stack|interview)/i,
+  locStrong: /(\bmust (be|reside|live|work)\b[^.]{0,50}\b(in|based|located|within)\b|\bbased in\b|\blocated in\b|\bresid(e|ence|ent|ing)\b|\bauthori[sz]ed to work\b|\bwork(ing)? authori[sz]ation\b|\bvisas?\b|\bsponsor(ship)?\b|\btime ?zones?\b[^.]{0,40}\b(overlap|within|hours|gmt|utc|est|pst|cet|ist|[+±]\s?\d)|\b(overlap|within)\b[^.]{0,30}\btime ?zones?\b|\b(us|u\.s\.|eu|uk|emea|apac|latam|north america)[- ](only|based)\b|\bwithin the (us|u\.s\.|eu|uk|united states)\b|\brelocat(e|ion)\b|\bon-?site\b|\bin[- ]office\b|\bhybrid\b)/i,
+  notLoc: /\b(benefits?|insurance|401\(?k|perks?|pto|parental|investors?|funding|raised|stipend|allowance|equipment|communication)\b/i,
+  locWeak: /\b(remote|anywhere|worldwide|distributed)\b/i,
+  exp: /\b\d{1,2}\s*\+?\s*(?:(?:-|–|to)\s*\d{1,2}\s*\+?\s*)?(?:years?|yrs?)\b[^.;,\n]{0,45}/i,
+  pay: /(?:[$€£₹]\s?\d[\d,.]*\s?[kKmM]?(?:\s?(?:-|–|to)\s?[$€£₹]?\s?\d[\d,.]*\s?[kKmM]?)?(?:\s?(?:USD|EUR|GBP|INR|CAD|AUD))?|\b\d[\d,.]*\s?(?:LPA|lakhs?\b|k\s?(?:USD|EUR|GBP)\b))/,
+};
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function skillTerms(names) {           // "PEFT/LoRA" → PEFT, LoRA; "quantization (4-bit)" → quantization
+  const out = new Set();
+  for (const n of names || []) for (const part of String(n).replace(/\(.*?\)/g, "").split("/")) {
+    const t = part.trim();
+    if (t.length >= 2) out.add(t);
+  }
+  return [...out].sort((a, b) => b.length - a.length);    // longest first: "Next.js" before "Next"
+}
+
+function jdMarker(have, gaps) {
+  const H = skillTerms(have), G = skillTerms(gaps).filter((g) => !H.some((h) => h.toLowerCase() === g.toLowerCase()));
+  const kind = new Map([...H.map((t) => [t.toLowerCase(), ["have", t]]), ...G.map((t) => [t.toLowerCase(), ["gap", t]])]);
+  const words = [...H, ...G].map((t) => `(?<![\\w+#.])${reEsc(esc(t))}(?![\\w+#])`).join("|");
+  const re = new RegExp(`(${JD.pay.source})|(${JD.exp.source})${words ? `|(${words})` : ""}`, "gi");
+  return (plain) => esc(plain).replace(re, (m, pay, exp, word) => {
+    if (pay) return `<mark class="hl-pay">${m}</mark>`;
+    if (exp) return `<mark class="hl-exp">${m}</mark>`;
+    const [k, canon] = kind.get(m.toLowerCase().replace(/&amp;/g, "&")) || [];
+    if (!k || (canon.length <= 3 && m !== esc(canon))) return m;      // "Go", "SQL": exact case only
+    return `<mark class="hl-${k}">${m}</mark>`;
+  });
+}
+
+const sentences = (s) => s.split(/(?<=[.!?])\s+(?=[A-Z0-9("“])/);
+
+function jdDigest(text, have, gaps, listed = "") {
+  const lines = String(text || "").replace(/\r/g, "").split("\n").map((l) => l.trim());
+  const isHead = (l) => l.length <= 70 && !/[.!?,;]$/.test(l) && !/https?:|@/.test(l) && /[A-Za-z]/.test(l) &&
+    (/:$/.test(l) || (l === l.toUpperCase() && l.length > 3) ||
+     (l.split(/\s+/).length <= 7 && /^[A-Z]/.test(l) && (JD.key.test(l) || JD.nice.test(l) || JD.boil.test(l) || JD.headWords.test(l))));
+  const secs = [{ head: "", kind: "", blocks: [] }], boil = [];
+  for (const l of lines) {
+    if (!l) continue;
+    const li = /^([-•*·▪●◦–]|\d{1,2}[.)])\s+(.*)$/.exec(l);
+    if (!li && isHead(l)) {
+      const h = l.replace(/:$/, "");
+      secs.push({ head: h, kind: JD.boil.test(h) ? "boil" : JD.nice.test(h) ? "nice" : JD.key.test(h) ? "key" : "", blocks: [] });
+    } else secs.at(-1).blocks.push(li ? { t: "li", s: li[2] } : { t: "p", s: l });
+  }
+  const mark = jdMarker(have, gaps);
+  const facts = {};
+  const render = (blocks) => {
+    let html = "", list = false;
+    for (const b of blocks) {
+      const inner = sentences(b.s).map((x) => {
+        const locish = !JD.notLoc.test(x);
+        if (!facts.loc && locish && JD.locStrong.test(x)) facts.loc = x;
+        if (!facts.locWeak && locish && JD.locWeak.test(x)) facts.locWeak = x;
+        if (!facts.exp && JD.exp.test(x)) facts.exp = x;
+        if (!facts.pay && JD.pay.test(x)) facts.pay = x;
+        const m = mark(x);
+        return locish && JD.locStrong.test(x) ? `<span class="hl-loc">${m}</span>` : m;
+      }).join(" ");
+      if (b.t === "li" && !list) { html += "<ul>"; list = true; }
+      if (b.t !== "li" && list) { html += "</ul>"; list = false; }
+      html += b.t === "li" ? `<li>${inner}</li>` : `<p>${inner}</p>`;
+    }
+    return html + (list ? "</ul>" : "");
+  };
+  let body = "";
+  for (const s of secs) {
+    const blocks = s.kind === "boil" ? [] : s.blocks.filter((b) => !(b.t === "p" && JD.boilPara.test(b.s)));
+    if (s.kind === "boil") boil.push(s);
+    else if (blocks.length !== s.blocks.length) boil.push({ head: "", blocks: s.blocks.filter((b) => !blocks.includes(b)) });
+    if (!blocks.length && !(s.head && s.kind !== "boil")) continue;
+    if (s.kind === "boil") continue;
+    body += `<section class="jd-sec ${s.kind}">${s.head ? `<h5>${esc(s.head)}${s.kind === "key" ? ' <span class="tag">what they need</span>' : s.kind === "nice" ? ' <span class="tag soft">nice to have</span>' : ""}</h5>` : ""}${render(blocks)}</section>`;
+  }
+  if (boil.length) body += `<details class="jd-boil"><summary>About the company, benefits &amp; legal</summary>${
+    boil.map((s) => `${s.head ? `<h5>${esc(s.head)}</h5>` : ""}${render(s.blocks)}`).join("")}</details>`;
+  const clip = (s) => (s.length > 220 ? s.slice(0, 217).replace(/\s+\S*$/, "") + "…" : s);
+  const where = facts.loc ? mark(clip(facts.loc))                    // their own words beat the board's field
+    : listed ? `<span class="faint">Listed as</span> ${esc(clip(listed))}` : facts.locWeak ? mark(clip(facts.locWeak)) : "";
+  const quotes = [["Location", where, true], ["Experience", facts.exp], ["Pay", facts.pay]]
+    .filter(([, s]) => s).map(([k, s, done]) => ({ k, html: done ? s : mark(clip(s)) }));
+  const words = String(text || "").split(/\s+/).length;
+  return { html: body, quotes, minutes: Math.max(1, Math.round(words / 230)) };
+}
+
 function cardHTML(j) {
   const c = j.card || {};
   const logo = j.logo ? `<img src="${esc(j.logo)}" alt="" onerror="this.remove()">` : "";
@@ -155,6 +255,8 @@ function cardHTML(j) {
   const tierLabel = { strong: "Strong match", good: "Good match", stretch: "Stretch" }[c.tier] || "Match";
   const conf = c.confidence == null ? "" : ` · confidence ${pct(c.confidence)}`;
   const tk = c.take;
+  const jdq = jdDigest(j.description, [...new Set([...(deck.skills || []), ...(c.skills_matched || [])])], c.skills_gap,
+    [...new Map([j.location, j.location_restrictions].filter(Boolean).map((x) => [x.trim().toLowerCase(), x.trim()])).values()].join(" · "));
   return `
     <div class="stamp apply">APPLY</div><div class="stamp pass">PASS</div><div class="stamp later">LATER</div>
     <div class="jc-scroll">
@@ -175,7 +277,10 @@ function cardHTML(j) {
       ${tk ? "" : `<div class="jc-block"><h4>Why it was picked</h4><ul class="reasons">${(c.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
       ${c.skills_matched?.length ? `<div class="jc-block"><h4>Your matching skills</h4><div class="chips">${c.skills_matched.map((s) => `<span class="chip good">${esc(s)}</span>`).join("")}</div></div>` : ""}
       ${c.skills_gap?.length ? `<div class="jc-block"><h4>Gaps they ask for</h4><div class="chips">${c.skills_gap.map((s) => `<span class="chip bad">${esc(s)}</span>`).join("")}</div></div>` : ""}`}
-      <div class="jc-block"><details class="desc"><summary>Full description</summary><pre>${esc(j.description || "No description provided.")}</pre></details></div>
+      ${jdq.quotes.length ? `<div class="jc-block evidence"><h4>In their words</h4>${jdq.quotes.map((q) => `<div class="ev"><span>${q.k}</span><p>${q.html}</p></div>`).join("")}</div>` : ""}
+      <div class="jc-block"><details class="desc"><summary>Full description · ${jdq.minutes} min read</summary>
+        <div class="jd-legend"><mark class="hl-have">your skills</mark><mark class="hl-gap">missing</mark><mark class="hl-exp">experience</mark><span class="hl-loc">location / visa</span><mark class="hl-pay">pay</mark></div>
+        <div class="jd">${jdq.html || `<p class="faint">${esc(j.description || "No description provided.")}</p>`}</div></details></div>
     </div>
     <div class="jc-foot">
       <span class="src">via ${esc(j.source)}</span>
@@ -241,7 +346,7 @@ function attachDrag(card) {
   let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false, pid = null;
   const stamps = { apply: $(".stamp.apply", card), pass: $(".stamp.pass", card), later: $(".stamp.later", card) };
   card.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("a, button, summary, pre, .jc-block details[open]")) return;
+    if (e.target.closest("a, button, summary, pre, .jd, .evidence, .jc-block details[open]")) return;
     dragging = true; pid = e.pointerId; sx = e.clientX; sy = e.clientY; dx = dy = 0;
     card.setPointerCapture(pid);
     card.classList.add("dragging");
@@ -989,7 +1094,24 @@ function pollRun() {
 
 /* ================================================================== TRACKER */
 const STATUSES = ["Saved", "Applied", "Assessment", "Interviewing", "Offer", "Rejected", "Ghosted", "Withdrawn"];
-let tracker = { rows: [], q: "", status: "" };
+let tracker = { rows: [], q: "", status: "", sort: (() => {
+  try { return JSON.parse(localStorage.getItem("tracker-sort")) || { key: "applied_on", dir: 1 }; } catch (_) { return { key: "applied_on", dir: 1 }; }
+})() };
+// Columns, in reading order. dir 1 = ascending (oldest application first by default).
+const TCOLS = [
+  { sorts: [["match", "Match"]], cls: "c-match" },
+  { sorts: [["role", "Role"], ["company", "Company"]], cls: "c-role" },
+  { sorts: [["status", "Status"]], cls: "c-status" },
+  { sorts: [["applied_on", "Applied"], ["follow_up", "Follow-up"]], cls: "c-dates" },
+  { sorts: [], label: "Next step · Notes", cls: "c-notes" },
+];
+function sortRows(rows) {
+  const { key, dir } = tracker.sort;
+  const val = (r) => key === "status" ? STATUSES.indexOf(r.status || "Applied")
+    : key === "match" ? (r.match ?? -1) : key === "applied_on" ? (r.applied_on || r.created_at || "")
+    : String(r[key] || "").toLowerCase() || "\uffff";                     // blanks last
+  return [...rows].sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+}
 
 async function renderTracker() {
   tracker.rows = await api("/api/applications");
@@ -1060,6 +1182,7 @@ async function renderTracker() {
     tracker.q = ""; tracker.status = "";
     form.hidden = true;
     drawTable(); refreshStatus();
+    requestAnimationFrame(() => document.querySelector(`tr[data-id="${row.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
     toast(row.linked ? "Added · linked to the job on your board" : "Application added");
   };
   drawTable();
@@ -1072,44 +1195,83 @@ function drawTable() {
   $("#t-summary").innerHTML = STATUSES.filter((s) => counts[s]).map((s) => `<span class="chip st-${s.toLowerCase()}">${s} · ${counts[s]}</span>`).join("");
 
   const q = tracker.q.toLowerCase();
-  const rows = tracker.rows.filter((r) =>
+  const rows = sortRows(tracker.rows.filter((r) =>
     (!tracker.status || r.status === tracker.status) &&
-    (!q || [r.company, r.role, r.notes, r.next_step, r.location].some((v) => (v || "").toLowerCase().includes(q))));
+    (!q || [r.company, r.role, r.notes, r.next_step, r.location].some((v) => (v || "").toLowerCase().includes(q)))));
   const wrap = $("#t-table");
   if (!tracker.rows.length) {
     wrap.innerHTML = `<div class="card-box empty"><h2>No applications yet</h2><p>Swipe right on a job, or add one you applied to elsewhere.</p></div>`;
     return;
   }
-  const txt = (r, k, ph = "", w = "") => `<input class="cell" data-k="${k}" value="${esc(r[k])}" placeholder="${ph}" ${w ? `style="min-width:${w}"` : ""}>`;
-  wrap.innerHTML = `<div class="table-wrap"><table class="tracker">
-    <thead><tr><th>Company</th><th>Role</th><th>Link</th><th>Status</th><th>Applied</th><th>Next step</th><th>Follow-up</th><th>Notes</th><th title="Match score">Match</th><th></th></tr></thead>
+  const { key: sk, dir } = tracker.sort;
+  const arrow = (k) => (k === sk ? (dir > 0 ? " ▲" : " ▼") : "");
+  const cell = (r, k, ph = "", type = "text") => `<input class="cell" ${type !== "text" ? `type="${type}"` : ""} data-k="${k}" value="${esc(r[k] || "")}" placeholder="${ph}" aria-label="${ph || k}">`;
+  wrap.innerHTML = `
+    <div class="t-sort-m"><label>Sort by <select class="input" id="t-sort">${[["applied_on", 1, "Applied — oldest first"], ["applied_on", -1, "Applied — newest first"],
+      ["match", -1, "Match — best first"], ["follow_up", 1, "Follow-up — soonest"], ["status", 1, "Status"], ["company", 1, "Company"]]
+      .map(([k, d, l]) => `<option value="${k}:${d}" ${k === sk && d === dir ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+    <div class="table-wrap"><table class="apps">
+    <colgroup>${TCOLS.map((c) => `<col class="${c.cls}">`).join("")}<col class="c-del"></colgroup>
+    <thead><tr>${TCOLS.map((c) => `<th>${c.sorts.length ? c.sorts.map(([k, l]) => `<button class="th-sort ${k === sk ? "on" : ""}" data-sort="${k}">${l}${arrow(k)}</button>`).join('<span class="th-sep">·</span>')
+      : `<span class="th-sort">${c.label}</span>`}</th>`).join("")}<th></th></tr></thead>
     <tbody>${rows.map((r) => `
       <tr data-id="${r.id}">
-        <td>${txt(r, "company", "Company", "130px")}</td>
-        <td>${txt(r, "role", "Role", "190px")}</td>
-        <td><div class="link-cell"><input class="cell" type="url" data-k="url" value="${esc(r.url || "")}" placeholder="Paste link" title="${esc(r.url || "")}">${r.url ? `<a class="link-out" href="${esc(r.url)}" target="_blank" rel="noopener" title="Open posting" aria-label="Open posting">${ICON.ext}</a>` : ""}${r.job_id ? `<span class="chip good" title="Linked to a job from your board">board</span>` : ""}</div></td>
-        <td><select class="status-sel st-${(r.status || "applied").toLowerCase()}" data-k="status">${STATUSES.map((s) => `<option ${s === r.status ? "selected" : ""}>${s}</option>`).join("")}</select></td>
-        <td><input class="cell" type="date" data-k="applied_on" value="${esc(r.applied_on || "")}"></td>
-        <td>${txt(r, "next_step", "e.g. OA due", "130px")}</td>
-        <td class="${r.follow_up && r.follow_up < today && !["Offer", "Rejected", "Withdrawn"].includes(r.status) ? "overdue" : ""}"><input class="cell" type="date" data-k="follow_up" value="${esc(r.follow_up || "")}"></td>
-        <td><textarea class="cell" data-k="notes" rows="1" placeholder="Notes" style="min-width:180px">${esc(r.notes || "")}</textarea></td>
-        <td class="match-num">${r.match != null ? Math.round(r.match) : "—"}</td>
-        <td><button class="icon-btn" data-del="${r.id}" title="Delete row" aria-label="Delete row">${ICON.trash}</button></td>
+        <td class="c-match"><span class="m-num ${r.match == null ? "none" : r.match >= 75 ? "strong" : r.match >= 60 ? "good" : "stretch"}" title="${r.job_id ? "Match score from your board" : "Added by hand"}">${r.match != null ? Math.round(r.match) : "—"}</span></td>
+        <td class="c-role">
+          <div class="rc-line"><input class="cell strong" data-k="role" value="${esc(r.role || "")}" placeholder="Role" aria-label="Role">
+            ${r.url ? `<a class="link-out" href="${esc(r.url)}" target="_blank" rel="noopener" title="Open posting" aria-label="Open posting">${ICON.ext}</a>` : ""}
+            <button class="icon-btn link-edit" data-link="${r.id}" title="${r.url ? "Change link" : "Add the posting link"}" aria-label="Edit link">${r.url ? "✎" : "+ link"}</button></div>
+          ${cell(r, "company", "Company")}
+        </td>
+        <td class="c-status"><select class="status-sel st-${(r.status || "applied").toLowerCase()}" data-k="status">${STATUSES.map((s) => `<option ${s === r.status ? "selected" : ""}>${s}</option>`).join("")}</select></td>
+        <td class="c-dates">
+          <label class="d-row"><span>Applied</span>${cell(r, "applied_on", "", "date")}</label>
+          <label class="d-row ${r.follow_up && r.follow_up < today && !["Offer", "Rejected", "Withdrawn"].includes(r.status) ? "overdue" : ""}"><span>Follow-up</span>${cell(r, "follow_up", "", "date")}</label>
+        </td>
+        <td class="c-notes">${cell(r, "next_step", "Next step, e.g. OA due Fri")}
+          <textarea class="cell" data-k="notes" rows="1" placeholder="Notes" data-autosize>${esc(r.notes || "")}</textarea></td>
+        <td class="c-del"><button class="icon-btn" data-del="${r.id}" title="Delete row" aria-label="Delete row">${ICON.trash}</button></td>
       </tr>`).join("")}</tbody></table></div>
     ${rows.length ? "" : `<p class="faint" style="text-align:center">No rows match your filter.</p>`}
-    <p class="faint" style="font-size:12.5px;margin-top:10px">Every cell is editable and saves automatically. Overdue follow-ups show in red.</p>`;
+    <p class="faint small" style="margin-top:10px">Every cell saves as you edit. Click a column title to sort. Overdue follow-ups show in red.</p>`;
 
+  const setSort = (key, d) => {
+    tracker.sort = { key, dir: d };
+    try { localStorage.setItem("tracker-sort", JSON.stringify(tracker.sort)); } catch (_) { /* storage off */ }
+    drawTable();
+  };
+  wrap.querySelectorAll("[data-sort]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.sort;
+    setSort(k, k === sk ? -dir : k === "match" ? -1 : 1);
+  }));
+  $("#t-sort").onchange = (e) => { const [k, d] = e.target.value.split(":"); setSort(k, +d); };
+  wrap.querySelectorAll("[data-autosize]").forEach((t) => {
+    const fit = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; };
+    t.addEventListener("input", fit); requestAnimationFrame(fit);
+  });
+  const save = async (id, patch) => {
+    const updated = await api(`/api/applications/${id}`, { method: "PATCH", json: patch });
+    const i = tracker.rows.findIndex((r) => String(r.id) === String(id));
+    tracker.rows[i] = updated;
+    return updated;
+  };
   wrap.querySelectorAll("tr[data-id]").forEach((tr) => {
     const id = tr.dataset.id;
     tr.addEventListener("change", async (e) => {
       const k = e.target.dataset.k; if (!k) return;
-      const updated = await api(`/api/applications/${id}`, { method: "PATCH", json: { [k]: e.target.value } });
-      const i = tracker.rows.findIndex((r) => String(r.id) === id);
-      tracker.rows[i] = updated;
-      if (k === "status" || k === "follow_up" || k === "url") drawTable();
-      toast(k === "url" && updated.linked ? "Linked to the job on your board" : "Saved");
+      await save(id, { [k]: e.target.value });
+      if (k === "status" || k === "follow_up") drawTable();
+      toast("Saved");
     });
   });
+  wrap.querySelectorAll("[data-link]").forEach((b) => (b.onclick = async () => {
+    const row = tracker.rows.find((r) => String(r.id) === b.dataset.link);
+    const url = prompt("Link to the posting you applied on", row.url || "");
+    if (url === null) return;
+    const updated = await save(row.id, { url: url.trim() });
+    drawTable();
+    toast(updated.linked ? "Linked to the job on your board" : "Link saved");
+  }));
   wrap.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
     const id = b.dataset.del;
     const row = tracker.rows.find((r) => String(r.id) === id);

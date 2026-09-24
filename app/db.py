@@ -131,6 +131,20 @@ class DB:
                   json.dumps(j), t, t) for j in jobs])
             self.conn.commit()
 
+    def refresh_text(self, jobs: List[dict], statuses=("new", "later", "applied", "rejected", "filtered")) -> int:
+        """Postings seen again: update their stored text (e.g. a fuller description) without re-scoring."""
+        by_id = {j["id"]: j for j in jobs}
+        n = 0
+        with self.lock:
+            q = ",".join("?" * len(statuses))
+            for row in self.conn.execute(f"SELECT id, data FROM jobs WHERE status IN ({q})", statuses).fetchall():
+                j = by_id.get(row["id"])
+                if j and json.loads(row["data"]).get("description") != j.get("description"):
+                    self.conn.execute("UPDATE jobs SET data=? WHERE id=?", (json.dumps(j), row["id"]))
+                    n += 1
+            self.conn.commit()
+        return n
+
     def update_job(self, job_id: str, **fields) -> None:
         for k in ("triage", "eval", "card"):
             if k in fields and not isinstance(fields[k], (str, type(None))):

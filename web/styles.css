@@ -383,3 +383,84 @@ textarea[data-autosize] { resize: none; overflow: hidden; }
   .profile .resume-card { order: 1; }
   .profile .o-late { order: 2; }
 }
+
+/* ---------- job description reading view ---------- */
+.evidence .ev { display: grid; grid-template-columns: 86px 1fr; gap: 10px; font-size: 13.5px; padding: 7px 0; border-top: 1px solid var(--line); }
+.evidence .ev:first-of-type { border-top: 0; padding-top: 0; }
+.evidence .ev > span { color: var(--faint); font-weight: 700; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; padding-top: 2px; }
+.evidence .ev p { margin: 0; color: var(--text); }
+.evidence, .jd { user-select: text; -webkit-user-select: text; }
+.jd-legend { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; font-size: 11.5px; }
+.jd { font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.jd p { margin: 8px 0; }
+.jd ul { margin: 6px 0 10px; padding-left: 18px; }
+.jd li { margin: 3px 0; }
+.jd h5 { margin: 16px 0 4px; font-size: 13px; color: var(--text); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.jd .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); background: var(--info-bg); padding: 2px 7px; border-radius: 6px; }
+.jd .tag.soft { color: var(--muted); background: var(--surface-3); }
+.jd-sec.key { background: var(--surface-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 2px 12px 4px; margin: 12px 0; color: var(--text); }
+.jd-boil { margin-top: 14px; opacity: .8; }
+.jd-boil summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--faint); }
+mark { color: inherit; border-radius: 4px; padding: 0 3px; }
+mark.hl-have { background: var(--good-bg); color: var(--good); font-weight: 600; }
+mark.hl-gap { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+mark.hl-exp { background: var(--later-bg); color: var(--later); font-weight: 600; }
+mark.hl-pay { background: var(--info-bg); color: var(--accent); font-weight: 600; }
+.hl-loc { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--later) 70%, transparent); text-decoration-thickness: 2px; text-underline-offset: 3px; color: var(--text); }
+.jd-legend .hl-loc { padding: 0 3px; }
+
+/* ---------- Tracker (v2): every column visible, no sideways scrolling ---------- */
+main.wide { max-width: 1380px; }
+table.apps { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13.5px; }
+table.apps col.c-match { width: 64px; }
+table.apps col.c-role { width: 30%; }
+table.apps col.c-status { width: 132px; }
+table.apps col.c-dates { width: 196px; }
+table.apps col.c-notes { width: auto; }
+table.apps col.c-del { width: 44px; }
+table.apps th { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+.th-sort { border: 0; background: none; padding: 0; cursor: pointer; font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); font-weight: 700; white-space: nowrap; }
+.th-sort:hover { color: var(--text); }
+table.apps td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; min-width: 0; }
+table.apps tr:last-child td { border-bottom: 0; }
+table.apps tr:hover td { background: var(--surface-2); }
+table.apps .cell { width: 100%; }
+table.apps .cell.strong { font-weight: 650; color: var(--text); }
+table.apps .c-role .cell:not(.strong) { color: var(--muted); padding-top: 2px; }
+table.apps input[type="date"].cell { font-variant-numeric: tabular-nums; }
+table.apps .status-sel { margin-top: 3px; max-width: 100%; }
+.rc-line { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.rc-line .cell { flex: 1; min-width: 0; text-overflow: ellipsis; }
+.link-edit { font-size: 12px; color: var(--faint); white-space: nowrap; padding: 4px 6px; }
+.m-num { display: inline-grid; place-items: center; min-width: 38px; height: 28px; margin-top: 3px; border-radius: 8px; font-weight: 800; font-variant-numeric: tabular-nums; background: var(--surface-3); color: var(--muted); }
+.m-num.strong { background: var(--good-bg); color: var(--good); }
+.m-num.good { background: var(--info-bg); color: var(--accent); }
+.m-num.stretch { background: var(--later-bg); color: var(--later); }
+.t-sort-m { display: none; margin-bottom: 10px; }
+.t-sort-m label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.t-sort-m select { width: auto; }
+.th-sort.on { color: var(--text); }
+.th-sep { color: var(--faint); margin: 0 6px; font-size: 11px; }
+.d-row { display: grid; grid-template-columns: 62px 1fr; align-items: center; }
+.d-row span { font-size: 11px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.c-notes .cell + .cell { margin-top: 2px; }
+table.apps .c-notes input.cell { color: var(--text); font-weight: 550; }
+/* phones and small tablets: each application becomes a card */
+@media (max-width: 860px) {
+  .t-sort-m { display: block; }
+  table.apps, table.apps tbody { display: block; }
+  table.apps colgroup, table.apps thead { display: none; }
+  table.apps tr { display: grid; grid-template-columns: 52px 1fr 1fr 40px; grid-template-areas: "m r r d" "s s s s" "t t t t" "o o o o"; gap: 6px 8px; padding: 12px 8px; border-bottom: 1px solid var(--line); }
+  table.apps tr:hover td { background: none; }
+  table.apps td { border: 0; padding: 0; }
+  table.apps .c-match { grid-area: m; } table.apps .c-role { grid-area: r; } table.apps .c-del { grid-area: d; }
+  table.apps .c-status { grid-area: s; } table.apps .c-dates { grid-area: t; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  table.apps .c-notes { grid-area: o; }
+  .d-row { grid-template-columns: 1fr; padding-left: 6px; }
+  table.apps td[data-label]:not(.c-match)::before { content: attr(data-label); display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 0 6px; }
+}
+table.apps col.c-dates { width: 214px; }
+.d-row { grid-template-columns: 76px 1fr; }
+.d-row span { white-space: nowrap; }
+table.apps .c-notes input.cell::placeholder { font-weight: 400; }
+@media (max-width: 860px) { .d-row { grid-template-columns: 1fr; } }
