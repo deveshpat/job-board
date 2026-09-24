@@ -477,6 +477,8 @@ async function renderProfile() {
             `<option value="${k}" ${k === profile.level ? "selected" : ""}>${v}</option>`).join("")}</select></label>
           <label>Based in<select class="input" data-f="country">${[...new Set([...(profile.countries || []), profile.country].filter(Boolean))].map((c) =>
             `<option ${c === profile.country ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+          <label class="span2">Languages you work in<input class="input" data-f="languages" placeholder="English, Hindi"
+            value="${esc((profile.languages || (profile.country === "India" ? ["English", "Hindi"] : ["English"])).join(", "))}"></label>
         </div>
         ${reads ? `<p class="faint small">We read you as <b>${esc(reads)}</b>. Every job is matched against this, your skills and your resume.</p>` : ""}
       </section>
@@ -521,8 +523,11 @@ async function renderProfile() {
 
   // -- your details: saved as you leave each field (and kept when Kev re-reads the resume)
   view.querySelectorAll("[data-f]").forEach((el) => (el.onchange = async () => {
-    await api("/api/profile", { method: "PATCH", json: { [el.dataset.f]: el.value.trim() } });
-    toast("Saved");
+    const f = el.dataset.f;
+    const v = f === "languages" ? el.value.split(/[,;]/).map((x) => x.trim()).filter(Boolean).map((x) => x[0].toUpperCase() + x.slice(1)) : el.value.trim();
+    await api("/api/profile", { method: "PATCH", json: { [f]: v } });
+    toast(f === "languages" ? "Saved — jobs in other languages stay off your deck" : "Saved");
+    if (f === "languages") refreshStatus();
   }));
   $("#p-photo").onchange = (e) => e.target.files[0] && setPhoto(e.target.files[0]);
   view.querySelectorAll("[data-autosize]").forEach((t) => {

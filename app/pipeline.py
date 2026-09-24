@@ -17,7 +17,8 @@ from . import questions as Q
 from .db import DB, now
 from .jev import Jev, JevError
 from .kaggle import KAGGLE_KEV_RUN, KEV_COMMIT, KaggleError, KaggleRunner
-from .profile import compact_candidate
+from .lang import detect as detect_language
+from .profile import compact_candidate, default_languages
 from .sources import DEFAULT_COMPANIES, SOURCES, fetch_all
 from .urls import norm_url as _norm_url
 
@@ -135,6 +136,12 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
         gates.append("Asks for much more experience")
     if a["red_flags"]["noul"] > Q.GATE_RED_FLAGS_MAX:
         gates.append("Red flags (scam/unpaid/vague)")
+    speaks = [x.lower() for x in (profile.get("languages") or default_languages(profile.get("country", "")))]
+    written_in = detect_language(f"{job.get('title', '')}\n{job.get('description', '')}") if job else None
+    if written_in and written_in.lower() not in speaks:
+        gates.append(f"Posting is in {written_in}")
+    elif a.get("other_language", {}).get("noul", 0) > Q.GATE_OTHER_LANGUAGE_MAX:
+        gates.append("Needs a language you don't list")
     if match < min_match:
         gates.append(f"Match {match:.0f} below {min_match:.0f}")
 
@@ -166,7 +173,8 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
              LEVEL_LABEL[a["level"]["choice"]],
              EXPERIENCE_LABEL[a["experience"]["choice"]] if a["experience"]["choice"] != "not_stated" else "",
              EMPLOYMENT_LABEL[a["employment"]["choice"]] if a["employment"]["choice"] != "full_time" else "",
-             DEGREE_LABEL[deg["choice"]] if deg["choice"] in ("cs_engineering_degree", "advanced_degree") else ""]
+             DEGREE_LABEL[deg["choice"]] if deg["choice"] in ("cs_engineering_degree", "advanced_degree") else "",
+             f"In {written_in}" if written_in and written_in != "English" else ""]
     return {
         "match": round(match), "tier": tier, "confidence": round(confidence, 3),
         "unsure": confidence < Q.LOW_CONFIDENCE,
@@ -175,6 +183,8 @@ def score_answers(a: dict, profile: dict, skills: List[str], gaps: List[str], mi
         "skills_matched": matched, "skills_gap": missing,
         "lead_project": None if lead in (None, "none") else lead,
         "take": kev_take(a, comp, cand_level, loc_choice, loc_label, matched, missing, confidence,
+                         language=written_in if written_in and written_in.lower() not in speaks else
+                         ("another language" if a.get("other_language", {}).get("noul", 0) > 0.5 else None),
                          listed_elsewhere=(job or {}).get("location") if listed == "elsewhere" else None),
         "reasons": reasons, "gates": gates,
         "components": {k: round(v, 3) for k, v in comp.items()},
@@ -187,9 +197,13 @@ def _list(xs: List[str], n: int = 4) -> str:
 
 
 def kev_take(a: dict, comp: dict, cand_level: str, loc_choice: str, loc_label: str,
-             matched: List[str], missing: List[str], confidence: float, listed_elsewhere: Optional[str] = None) -> dict:
+             matched: List[str], missing: List[str], confidence: float, listed_elsewhere: Optional[str] = None,
+             language: Optional[str] = None) -> dict:
     """Kev's answers as a short verdict plus the few points that matter — no probabilities or rubric text."""
     pros, cons = [], []
+    if language:                                        # first: it usually settles it
+        cons.append(f"Written in {language} — they'll expect you to work in it" if language != "another language"
+                    else "Asks for a language you don't list")
     sk = comp["skill_alignment"]
     if sk >= 0.7:
         pros.append(f"Strong skill overlap{': ' + _list(matched) if matched else ''}")

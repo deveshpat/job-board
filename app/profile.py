@@ -197,6 +197,7 @@ def build_profile(resume_path: Path, jev: Optional[Jev], display_name: str = "")
         "country": "India" if "india" in header["location"].lower() else "",
         "search_terms": [],      # [{name, p, keep}]
     }
+    profile["languages"] = default_languages(profile["country"])      # the languages you work in (editable)
 
     if jev and jev.available:
         ans = jev.ask(text, Q.profile_questions(keywords, list(projects)))
@@ -237,7 +238,11 @@ def build_profile(resume_path: Path, jev: Optional[Jev], display_name: str = "")
 
 
 # Fields you can edit on the Profile page; a rebuild keeps your edits (profile["overrides"]).
-EDITABLE = ("name", "headline", "location", "email", "goal", "level", "country")
+EDITABLE = ("name", "headline", "location", "email", "goal", "level", "country", "languages")
+
+
+def default_languages(country: str) -> list:
+    return ["English", "Hindi"] if (country or "").lower() == "india" else ["English"]
 
 
 def carry_overrides(old: Optional[dict], new: dict) -> dict:
@@ -290,6 +295,7 @@ def compact_candidate(profile: dict) -> dict:
         "level": profile.get("level", "entry"),
         "country": profile.get("country", ""),
         "location": profile.get("location", ""),
+        "languages": profile.get("languages") or default_languages(profile.get("country", "")),
         "fields": [Q.FIELDS.get(f["name"], f["name"]) for f in profile.get("fields", [])],
         "skills": skills,
         "projects": profile.get("projects", {}),

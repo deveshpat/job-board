@@ -327,6 +327,8 @@ async def patch_profile(request: Request):
     p["overrides"] = ov
     db.put("profile", p)
     db.touch("profile")
+    if "languages" in patch or "level" in patch or "country" in patch:
+        pipeline.rescore()                              # gates depend on these; no model calls
     return _public_profile(p)
 
 

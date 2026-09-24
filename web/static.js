@@ -245,7 +245,7 @@
     await buildResume();
     return resumeMeta();
   }
-  const EDITABLE = ["name", "headline", "location", "email", "goal", "level", "country"];   // app/profile.py
+  const EDITABLE = ["name", "headline", "location", "email", "goal", "level", "country", "languages"];   // app/profile.py
   const profileOut = () => S.user.profile ? { ...S.user.profile, ...(S.board?.labels || {}), photo_url: S.user.photo || null,
     resume: resumeMeta(), kev_behind: !!S.user.resume && S.user.profile.kev_rev !== S.user.resume.rev, job: { running: false } } : null;
 

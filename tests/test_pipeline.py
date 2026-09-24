@@ -668,3 +668,30 @@ def test_hosted_jev_first_then_kaggle(tmp_path, monkeypatch):
     monkeypatch.setattr(pl.Pipeline, "_run_local", down)
     db.conn.execute("DELETE FROM jobs"); db.conn.commit()
     assert p.run()["engine"] == "kaggle" and any(a == ("kernels", "push") for _, a in FakeKaggle.calls)
+
+
+def test_posting_language_gate():
+    from app.lang import detect
+    de = ("Deine Aufgaben: Du entwickelst mit uns die KI-Plattform und bist für die Weiterentwicklung der Backend-Services "
+          "zuständig. Wir bieten dir ein tolles Team, flexible Arbeitszeiten und die Möglichkeit, remote oder im Büro zu arbeiten. "
+          "Das bringst du mit: Erfahrung mit Python und FastAPI, sehr gute Deutschkenntnisse und Spaß an der Arbeit im Team. ") * 2
+    en = ("You will build our AI platform and own the backend services. We offer a great team, flexible hours and the option "
+          "to work remotely or in the office. You bring experience with Python and FastAPI and enjoy working in a team. ") * 2
+    links = "Apply here https://jobs.ashbyhq.com/x/2c12339b-d302-427c-9a73-d825b4b942b0?utm_source=a e o " * 20
+    assert detect(de) == "German" and detect(en) == "English" and detect("short text") is None
+    assert detect(en + links) == "English"                                       # URLs don't count
+    # the gate, through the real scorer
+    from app.questions import evaluate_questions
+    from app.profile import compact_candidate
+    from tests.fake_jev import answer
+    profile = build_profile(RESUME, None)
+    cand = compact_candidate(profile)
+    qs = evaluate_questions(cand, [])
+    assert "Hindi" in qs["other_language"]["instructions"]                       # India → English, Hindi by default
+    ans = answer({"model": "x", "state": {}, "questions": qs})["answers"]
+    ans["other_language"]["noul"] = 0.0
+    job = {"title": "Python Backend Developer (m/w/d)", "description": de, "location": "Würzburg"}
+    card = pl.score_answers(ans, profile, [], [], 0, job)
+    assert "Posting is in German" in card["gates"] and "In German" in card["chips"] and "German" in card["take"]["cons"][0]
+    card = pl.score_answers(ans, {**profile, "languages": ["English", "German"]}, [], [], 0, job)
+    assert not any("German" in g for g in card["gates"])

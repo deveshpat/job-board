@@ -218,6 +218,10 @@ def evaluate_questions(candidate: dict, gap_skills: List[str]) -> Dict[str, dict
                 "Squarely the kind of role the candidate says they want",
             ],
         ),
+        "other_language": noul(
+            f"Does `job` require working in a language other than {', '.join(candidate.get('languages') or ['English'])} — "
+            "for example fluent German, French or Dutch is required, or the posting itself is written in another language?",
+        ),
         "red_flags": noul(
             "Does `job` show signs of being a scam, unpaid, commission-only, a pay-to-apply or "
             "training-fee scheme, or a vague posting with no real role described?",
@@ -291,6 +295,7 @@ GATE_LOCATION_ELIGIBLE_MIN = 0.4  # p(remote_open) + p(local_office) + half of p
 GATE_LEVEL_FIT_MIN = 0.35         # probability-weighted LEVEL_FIT; below = mostly above the candidate's level
 GATE_EXPERIENCE_FIT_MIN = 0.35    # probability-weighted EXPERIENCE_FIT; below = asks for many more years
 GATE_RED_FLAGS_MAX = 0.6
+GATE_OTHER_LANGUAGE_MAX = 0.6      # "needs a language you don't list"; a posting written in one is gated in code
 
 ADVANCED_DEGREE_PENALTY = 12      # points off when a master's/PhD is required (p > 0.6)
 UNCLEAR_LOCATION_PENALTY = 6      # points off when location is unclear (p > 0.6)
